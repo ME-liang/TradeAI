@@ -1,0 +1,48 @@
+# 公司基本面分析 Agent 配置
+# 注意：本脚手架阶段仅列出配置项，具体读取逻辑在后续实现中填入。
+
+data_source:
+  primary: tushare        # 主数据源：tushare / akshare / baostock
+  tushare_token: ""       # 填入你的 Tushare Pro token（留空时 main 自动回退 dummy）
+  fallback: akshare       # 兜底数据源（TODO）
+
+industry:
+  # 股票代码 -> 申万一级行业的映射表（CSV，含 header：code,industry）
+  mapping_file: data/industry_mapping.csv
+
+report:
+  output_dir: output            # 报告输出目录（运行时自动创建）
+  title_template: "{name} ({code}) 基本面分析报告"
+
+logging:
+  level: INFO
+
+# LLM 配置：只放非密钥项。API key 从环境变量读取（见 .env），不要在此硬编码密钥。
+# 支持多厂商路由（providers 顺序即优先级）：主厂商 402/限流时自动切下一个，
+# 全部不可用则降级为「未获取」文本，不中断报告生成。
+llm:
+  temperature: 0.3
+  max_tokens: 2000
+  # 单轮 LLM 请求超时上限（秒）。默认 600s 覆盖 deepseek-r1 等推理模型的长首字延迟
+  # （实测偶发 >9min）；如需更短可下调。各 provider 可用 request_timeout 单独覆盖。
+  request_timeout: 600
+  fallback_text: "（AI 结论生成失败：所有模型提供商均不可用，已跳过；报告其余部分不受影响）"
+  providers:
+    - name: qwen
+      base_url: https://ws-196pnbqk3k32dz2m.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      model: tongyi-xiaomi-analysis-flash
+      api_key_env: QWEN_API_KEY        # 密钥已移入 .env；主用厂商，排首位免 DeepSeek 限流等待
+      request_timeout: 600             # 推理模型：长首字延迟，给足超时避免每次重试都超时
+    - name: deepseek
+      base_url: https://api.deepseek.com/v1
+      model: deepseek-v4-flash
+      api_key_env: DEEPSEEK_API_KEY        # 已在 .env；余额耗尽时 router 自动跳过它
+    - name: zhipu
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      model: glm-4-flash
+      api_key_env: ZHIPU_API_KEY           # 需在 .env 中补充；缺失则 router 跳过
+
+  # 向后兼容：若上方 providers 缺失，则沿用下方单厂商配置 + 环境变量 DEEPSEEK_BASE_URL
+  # provider: deepseek
+  # model: deepseek-v4-flash
+

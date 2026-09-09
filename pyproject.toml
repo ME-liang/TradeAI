@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fundamental-agent"
+version = "0.1.0"
+description = "公司基本面分析 Agent（脚手架）"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "jinja2",
+    "matplotlib",
+    "pyyaml",
+    "tushare",
+    "akshare>=1.18,<2.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27",
+]
+
+# 标准 src 布局：包在 src/fundamental_agent 下
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# 让 pytest 自动把 src 加入 sys.path，测试里无需手动 sys.path.insert
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+    "contract: AkShare 接口契约测试（每日执行，验证上游接口未失效，可能打网络）",
+]

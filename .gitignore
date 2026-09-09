@@ -1,0 +1,37 @@
+# ===== 密钥与环境（切勿提交） =====
+.env
+.env.local
+
+# ===== Python 缓存/虚拟环境 =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ===== 生成产物 =====
+output/
+*.html
+
+# ===== 编辑器/系统 =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+.DS_Store
+
+# ===== 临时调试/日志/草稿（含明文 API 日志，切勿提交） =====
+*.log
+_*
+.pytest_cache/
+
+# ===== 运行时数据缓存 =====
+data/cache/
+
+# ===== WorkBuddy 项目数据（非代码） =====
+.workbuddy/
+
+# ===== 备份/临时文件 =====
+*.bak*
+*.tmp
+
+# ===== Node 依赖（前端若用到） =====
+node_modules/
