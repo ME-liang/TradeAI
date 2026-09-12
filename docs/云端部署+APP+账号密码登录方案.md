@@ -96,3 +96,12 @@
 2. APP 目标用户是内部团队还是对外公众？——决定是否需要软著/商店上架/经营性 ICP 许可证（对外收费经营需《增值电信业务经营许可证》）。
 3. 短信服务商选阿里云还是腾讯云（单价持平，签名审核均需 1~2 工作日）；云账号是个人还是企业实名（影响签名报备）。
 4. iOS 分发确认：无企业签名条件下，iOS 用户首选用 PWA（Safari 添加到主屏），TestFlight 内测上限 1 万人。
+
+---
+
+## 实施记录（AUTH-A/B/C，2026-09-11 落地：路由访问权限控制）
+
+- **AUTH-A `frontend/server.py`**：页面级路由拦截——白名单（login/register/reset_password、css/js、/api/auth）外的一切 GET/POST 均需有效 `ta_session` 会话（经 8002 `/api/auth/me` 校验 SQLite 会话，fail-closed）；未登录访问页面 302 → `/login.html?next=<原路径>`（登录后原路返回），未登录调用 API → 401 JSON；已登录访问 `/login.html` → 302 回首页。
+- **AUTH-B `api/server.py` + `login.html` + `index.html`**：FastAPI `/api/*`（除 `/api/auth/*`）中间件门禁（Cookie/Bearer 双通道，OPTIONS 放行）；登录页已登录自动跳首页（或 next）；登录成功 honor `?next=`（同站相对路径，防 Open Redirect）；首页导航栏加「退出」按钮（/api/auth/logout → 回登录页）。
+- **AUTH-C 端到端验证 10/10**：未登录访问首页/个股页 302 带 next、登录成功进首页、刷新持久化、已登录访问登录页自动跳转、未登录 API 401、会话过期（DB 过期时间）重跳登录、登出后再访问重跳登录。
+- 会话持久化：未勾选「记住我」= 浏览器会话 Cookie（服务端 3 天）；勾选 = Max-Age 30 天持久化（服务端 30 天），刷新/重开浏览器均保持。

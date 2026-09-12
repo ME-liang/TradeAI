@@ -372,16 +372,31 @@ def run_pipeline(
     # ==========================================================================
 
     _emit("拉取财报数据", 15)
-    statements = build_statements(client, entity.code)
-    profile = statements.get("profile", {}) or {}
 
-    # 财务速写摘要：从「财务分析指标表 + 三大报表」直接计算（不依赖引擎、不依赖 LLM）。
-    # 必须在 build_profile 之前写入 profile：概况报告的财务数字全部由此提供，
-    # 引擎产出的 Metric.value 实测多为 None，不足以支撑「05 财务速写」模块。
-    try:
-        profile["fin_summary"] = build_financial_summary(statements)
-    except Exception:
-        profile["fin_summary"] = {}
+    # B1（速度优化 2026-09-10）：六层概况取数子进程先启动，与财报拉取**并行**——
+    # 两者数据源独立（子进程 worker 只依赖 code/self_name），串行是纯白等；
+    # 汇合点在六层子进程结束之后（见下方 _stmt_fut.result()）。
+    _code = entity.code
+    _self_name = entity.name
+    profile = {}
+
+    from concurrent.futures import ThreadPoolExecutor as _StmtEx
+
+    _stmt_ex = _StmtEx(max_workers=1)
+
+    def _stmt_task():
+        _st = build_statements(client, entity.code)
+        _prof = _st.get("profile", {}) or {}
+        # 财务速写摘要：从「财务分析指标表 + 三大报表」直接计算（不依赖引擎、不依赖 LLM）。
+        # 必须在 build_profile 之前写入 profile：概况报告的财务数字全部由此提供，
+        # 引擎产出的 Metric.value 实测多为 None，不足以支撑「05 财务速写」模块。
+        try:
+            _prof["fin_summary"] = build_financial_summary(_st)
+        except Exception:
+            _prof["fin_summary"] = {}
+        return _st, _prof
+
+    _stmt_fut = _stmt_ex.submit(_stmt_task)
 
     # 概况六层取数（cninfo / 同花顺 / 东财可用端点），并入 profile 供 build_profile 装配。
     # DataFrame 统一转为 records（list[dict]），保证 result.profile 全程可 JSON 序列化
@@ -399,7 +414,6 @@ def run_pipeline(
     # 杜绝并发 FATAL 崩溃（2026-09-06 两次独立复现, 崩溃偶发不可赌）。单层失败回退空值,
     # 与原先逐 try 的语义一致, 绝不拖垮主流程。
     _code = entity.code
-    _self_name = profile.get("name") or entity.name
     profile.setdefault("cninfo", {})
     profile["holders"] = []
     profile["dividend"] = []
@@ -468,14 +482,14 @@ def run_pipeline(
             _parent_conn, _child_conn = _ctx.Pipe(duplex=False)
             _p = _ctx.Process(
                 target=_overview_layers_worker,
-                args=(_code, _self_name, True, 240, _child_conn),
+                args=(_code, _self_name, True, 420, _child_conn),
                 daemon=True,
             )
             _p.start()
             _child_conn.close()
             _msg = None
             try:
-                if _parent_conn.poll(240 + 45):
+                if _parent_conn.poll(420 + 45):
                     _msg = _parent_conn.recv()
             except (EOFError, OSError):
                 _msg = None
@@ -508,17 +522,45 @@ def run_pipeline(
     for _k, _v in _layers.items():
         profile[_k] = _v
 
+    # B1 汇合：取回与六层子进程并行执行的财报拉取结果（异常时 statements 为空，
+    # 后续引擎/渲染沿用「缺数据→未获取」的既有降级语义）。
+    try:
+        statements, _stmt_prof = _stmt_fut.result()
+        profile.update(_stmt_prof or {})
+    except Exception as _e:  # noqa: BLE001
+        statements = {}
+        logger.warning("[main] 并行财报拉取失败，以空数据继续：%s", _e)
+    if "fin_summary" not in profile:
+        profile["fin_summary"] = {}
+    _stmt_ex.shutdown(wait=False)
+
     # 回归修复（措施2 引入）：curated peers 的本公司行 name 取自 _self_name，
     # 而 _self_name 在池启动前求值——彼时公司名尚未就绪，code-only 请求会把
     # 本公司行落成股票代码（601138 报告对比图/表显示"601138"）。原串行流程
     # 先 identity 后 peers 无此问题。此处池已结束，从 identity 层结果取真实
     # 公司名回填本公司行（hl 标记或代码精确匹配），仅替换纯代码形态的名字。
+    _cninfo = profile.get("cninfo") or {}
+    # 简称优先：cninfo 的 name 在「东财画像失败」场景下可能被填成工商全称，
+    # 故 short_name（A股简称）优先于 name，保证抬头是「东山精密（002384）」口径。
     _pn = (
         profile.get("name")
-        or (profile.get("cninfo") or {}).get("name")
+        or _cninfo.get("short_name")
+        or _cninfo.get("name")
         or entity.name
     )
-    if _pn and not re.fullmatch(r"\d{6}", str(_pn)):
+    _pn = str(_pn).strip() if _pn else ""
+    if re.fullmatch(r"\d{6}", _pn):
+        # 抬头修复（2026-09-12）：纯股票代码不是公司名，视为未取到
+        _pn = ""
+    if _pn:
+        # 抬头修复（2026-09-12）：上述链路此前**只用于回填 peers 本公司行**，
+        # 未回写 profile["name"]。东财个股画像接口（get_company_profile 的
+        # stock_individual_info_em）限流时拿不到名称，顶层 name 便退化为股票
+        # 代码，概况报告抬头渲染成「002384（002384）」——而正确名称其实已在
+        # 六层 identity 层（cninfo 口径）里。此处回写顶层 name，使 result.name
+        # 与抬头同源，不再退化为代码。（也顺带修正基本面报告与产物复用的名称）
+        profile["name"] = _pn
+    if _pn:
         for _p in profile.get("peers") or []:
             if not isinstance(_p, dict):
                 continue
@@ -647,15 +689,27 @@ def run_pipeline(
         # overview.py 全链路不消费 llm_summary，此前对 overview 是一次无用 LLM 调用（10-30s）。
         if report_type == "fundamental":
             _emit("生成 AI 结论", 80)
-            try:
-                result.llm_summary = summarize_analysis(result)
-            except Exception:
-                result.llm_summary = ""
-            # 基本面报告额外用 LLM 润色各模块解读（概况报告走 B① 整段生成，不在此处理）
-            try:
-                result.llm_insights = polish_module_insights(result) or {}
-            except Exception:
-                result.llm_insights = {}
+            # B2（速度优化）：AI 结论与模块润色互不依赖（都只读 result），并行执行——
+            # LLM 阶段耗时 = max 而非 sum（实测省 10-30s）；单调用失败仍回退空值。
+            from concurrent.futures import ThreadPoolExecutor as _TPE2
+
+            def _sum_task():
+                try:
+                    return summarize_analysis(result)
+                except Exception:
+                    return ""
+
+            def _polish_task():
+                try:
+                    return polish_module_insights(result) or {}
+                except Exception:
+                    return {}
+
+            with _TPE2(max_workers=2) as _ex2:
+                _f_sum = _ex2.submit(_sum_task)
+                _f_pol = _ex2.submit(_polish_task)
+                result.llm_summary = _f_sum.result()
+                result.llm_insights = _f_pol.result()
 
     written: str | None = None
     if out_path:

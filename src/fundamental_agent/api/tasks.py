@@ -17,18 +17,25 @@ class TaskManager:
         self._tasks: dict[str, TaskStatus] = {}
         self._lock = threading.Lock()
 
-    def create(self, code: str = "", bk: str = "") -> TaskStatus:
-        """创建任务。若同一 code+bk 已有 PENDING/RUNNING 任务，直接复用，避免重复打接口。
+    def create(self, code: str = "", bk: str = "", report_type: str = "") -> TaskStatus:
+        """创建任务。仅当 **同一 code+bk+report_type** 已有 PENDING/RUNNING 任务时复用。
 
-        bk 为行业对比报告的对比基准板块：切换板块后再点生成必须新建任务而非复用旧板块任务。
+        去重键必须包含 report_type（2026-09-11 修复状态串扰根因）：此前只按 code+bk
+        去重，概况任务尚在 RUNNING 时点「基本面」会命中该任务并原样返回，而调用方仍以
+        report_type=fundamental 启动第二个 worker —— 两个 worker 共用同一 task_id 交替
+        写 update()，stage/progress 与最终 html_path 被互相覆盖，前端两个面板轮询同一
+        任务，出现「概况报告被基本面报告覆盖」。
+        bk 为行业对比报告的对比基准板块：切换板块后再点生成必须新建任务而非复用旧任务。
         """
         with self._lock:
             for t in self._tasks.values():
-                if t.code == code and t.bk == bk and t.status in ("PENDING", "RUNNING"):
+                if (t.code == code and t.bk == bk
+                        and getattr(t, "report_type", "") == report_type
+                        and t.status in ("PENDING", "RUNNING")):
                     return t
             task_id = uuid.uuid4().hex[:12]
             task = TaskStatus(task_id=task_id, status="PENDING", stage="排队中",
-                              code=code, bk=bk)
+                              code=code, bk=bk, report_type=report_type)
             self._tasks[task_id] = task
             return task
 

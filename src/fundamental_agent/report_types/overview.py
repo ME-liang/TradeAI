@@ -2706,7 +2706,31 @@ def build_overview_data(
             return None
 
     data["code"] = profile_dict.get("code") or getattr(result, "code", "") or ""
-    data["name"] = profile_dict.get("name") or getattr(result, "name", "") or data["code"]
+
+    # 抬头修复（2026-09-12）：抬头标题应为「公司名称（公司代码）」，此前当东财
+    # 个股画像接口限流、顶层 name 缺失时，result.name 退化为股票代码，抬头被渲染成
+    # 「002384（002384）」。此处建立名称解析链，且**纯 6 位代码一律不算名称**：
+    #   顶层 name → 六层 identity 层（cninfo 口径，上游失败时往往仍有值）
+    #   → identity.short_name（A股简称）→ result.name
+    # 全部缺失时才退化为代码（模板对 name==code 会去重显示，不出现重复）。
+    def _pick_name(*cands):
+        for _c in cands:
+            _s = str(_c or "").strip()
+            if _s and not re.fullmatch(r"\d{6}", _s):
+                return _s
+        return ""
+
+    _id_layer = (profile_dict.get("layers", {}) or {}).get("identity", {}) or {}
+    # 顺序「简称优先」：顶层 name（通常是东财/用户给出的简称）→ identity.short_name
+    # （cninfo「A股简称」）→ identity.name（上游缺失时该字段可能被 cninfo 填成**工商
+    # 全称**，如「苏州东山精密制造股份有限公司」，故排在简称之后）→ result.name。
+    _best_name = _pick_name(
+        profile_dict.get("name"),
+        _id_layer.get("short_name"),
+        _id_layer.get("name"),
+        getattr(result, "name", ""),
+    )
+    data["name"] = _best_name or data["code"]
     # P2-E1：行情与资金面（延时行情 + 融资融券）图层，供估值坐标覆盖与「行情与资金面」模块渲染
     _mkt_layer = (profile_dict.get("layers", {}) or {}).get("market", {}) or {}
     _q = _mkt_layer.get("quote") or {}
@@ -2723,10 +2747,14 @@ def build_overview_data(
                 if isinstance(v, str) and not v.strip():
                     continue
                 data[k] = v
-        if llm_json.get("name"):
-            data["name"] = llm_json["name"]
+        if _pick_name(llm_json.get("name")):
+            data["name"] = str(llm_json["name"]).strip()
         if llm_json.get("code"):
             data["code"] = llm_json["code"]
+    # 抬头兜底（2026-09-12）：LLM 未给名称或把代码回显成名称时，用数据层解析链的名称，
+    # 避免抬头最终只剩一串代码（名称确实无源可查时才显示代码本身）。
+    if re.fullmatch(r"\d{6}", str(data.get("name") or "").strip()):
+        data["name"] = _best_name or data["code"]
 
     # 结论区兜底：LLM 结论缺失、或命中事实性拦截被清空时，落到数据层拼装的事实陈述，
     # 而不是渲染「AI 内容生成失败」这类与报告其余部分自相矛盾的降级文案。

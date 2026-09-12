@@ -46,6 +46,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 一旦漏设环境变量就会出现「一键生成」报「报告服务不可达」的假故障，故默认值改为 8002。
 REPORT_API_BASE = os.environ.get("REPORT_API_BASE", "http://127.0.0.1:8002").rstrip("/")
 
+# ===== 登录态路由访问控制（AUTH-A 2026-09-11） =====
+# 会话 Cookie 名与 FastAPI auth_service.SESSION_COOKIE 一致; 会话校验经 8002 的
+# /api/auth/me（SQLite 会话表是单一事实源, 过期/无效 → 401）。未登录访问受保护
+# 页面一律 302 → /login.html?next=…；API 一律 401 JSON。
+SESSION_COOKIE_NAME = "ta_session"
+_PUBLIC_EXACT = {"/login.html", "/register.html", "/reset_password.html", "/favicon.ico"}
+_PUBLIC_PREFIXES = ("/css/", "/js/", "/api/auth")
+
+
+def _is_public_path(path: str) -> bool:
+    if path in _PUBLIC_EXACT:
+        return True
+    return any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+
 # ===== 交易日缓存 =====
 _cache_lock = threading.Lock()
 _cache = {"date": None, "records": None}
@@ -1514,12 +1528,68 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
+        # HTML 一律禁缓存: 改版后浏览器必须拿到最新页, 否则会残留旧 JS(实测踩坑:
+        # login.html 换真实登录接口后, 缓存页仍弹「演示环境」toast 且不跳转)
+        if ext in (".html", ".htm"):
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def _get_cookie(self, name: str):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return None
+
+    def _session_ok(self) -> bool:
+        """ta_session 会话校验: 经 FastAPI /api/auth/me（SQLite 会话表单一事实源）。
+
+        校验为同步内网调用（本机 8002, timeout 3s）；服务未启动时 fail-closed
+        （重定向登录页），与「后端未启动时页面功能本就不可用」的整体行为一致。
+        """
+        token = self._get_cookie(SESSION_COOKIE_NAME)
+        if not token:
+            return False
+        try:
+            req = urllib.request.Request(
+                REPORT_API_BASE + "/api/auth/me",
+                headers={"Cookie": "%s=%s" % (SESSION_COOKIE_NAME, token)},
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def _redirect(self, location: str):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+
+        # ===== 登录态路由拦截（AUTH-A 2026-09-11） =====
+        if not _is_public_path(parsed.path):
+            if not self._session_ok():
+                if parsed.path.startswith("/api/"):
+                    self._send_json({"detail": "未登录或会话已过期"}, status=401)
+                else:
+                    _nxt = urllib.parse.quote(
+                        parsed.path + (("?" + parsed.query) if parsed.query else ""), safe="")
+                    self._redirect("/login.html?next=" + _nxt)
+                return
+        elif parsed.path == "/login.html" and self._session_ok():
+            # 已登录访问登录页 → 自动进入首页（或 next 指定的同站路径）
+            _qs = urllib.parse.parse_qs(parsed.query)
+            _nxt = (_qs.get("next") or [""])[0]
+            _safe = _nxt.startswith("/") and not _nxt.startswith("//")
+            self._redirect(_nxt if _safe else "/index.html")
+            return
+
         if parsed.path == "/api/stocks":
             try:
                 self._send_json(handle_api_stocks(urllib.parse.parse_qs(parsed.query)))
@@ -1591,6 +1661,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path.startswith("/api/report"):
+            if not self._session_ok():
+                self._send_json({"detail": "未登录或会话已过期"}, status=401)
+                return
+            self._proxy_report("GET")
+            return
+
+        if parsed.path.startswith("/api/auth"):
             self._proxy_report("GET")
             return
 
@@ -1613,12 +1690,13 @@ class Handler(BaseHTTPRequestHandler):
         if "api/stocks" in (self.path or ""):
             sys.stderr.write("[api] %s - %s\n" % (self.address_string(), fmt % args))
 
-    # ===== /api/report 反向代理到 FastAPI 报告服务 =====
+    # ===== /api/report、/api/auth 反向代理到 FastAPI 报告/认证服务 =====
     def _proxy_report(self, method):
-        """将 /api/report* 同源代理到 REPORT_API_BASE(默认 127.0.0.1:8001)。
+        """将 /api/report* 与 /api/auth* 同源代理到 REPORT_API_BASE(默认 127.0.0.1:8002)。
 
-        - 报告服务未启动时返回 502 + 友好提示(前端据此显示「报告服务未启动」)
+        - 后端未启动时返回 502 + 友好提示(前端据此显示「服务未启动」)
         - 透传 JSON 请求体(GET 无体)与响应体(含 /html 的 text/html 报告文件)
+        - 透传响应头 Set-Cookie: 登录接口经由此代理下发 HttpOnly 会话 Cookie
         """
         target = REPORT_API_BASE + self.path  # self.path 形如 /api/report/abc/html
         body = None
@@ -1653,6 +1731,10 @@ class Handler(BaseHTTPRequestHandler):
         ctype = resp.headers.get("Content-Type", "application/json")
         self.send_response(resp.status)
         self.send_header("Content-Type", ctype)
+        # 登录/注销接口的会话 Cookie 必须原样透传, 浏览器才能保存 ta_session
+        set_cookie = resp.headers.get("Set-Cookie")
+        if set_cookie:
+            self.send_header("Set-Cookie", set_cookie)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -1661,6 +1743,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path.startswith("/api/report"):
+            if not self._session_ok():
+                self._send_json({"detail": "未登录或会话已过期"}, status=401)
+                return
+            self._proxy_report("POST")
+            return
+        if parsed.path.startswith("/api/auth"):
             self._proxy_report("POST")
             return
         self.send_error(405)

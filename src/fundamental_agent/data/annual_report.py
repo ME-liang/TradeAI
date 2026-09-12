@@ -11,6 +11,8 @@ P1 核心模块：下载公司最新年度报告 PDF（巨潮 sourced，本地�
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
 import time
@@ -25,6 +27,43 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CACHE_DIR = _PROJECT_ROOT / "data" / "cache" / "reports"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# A2（速度优化 2026-09-10）：年报 PDF 抽取结果磁盘缓存——同一份 PDF 的确定性解析
+# （名册/公司行动/上下游）每次生成都重复执行 PyMuPDF 全文解析，按 PDF 身份指纹缓存。
+EXTRACT_CACHE_DIR = _PROJECT_ROOT / "data" / "cache" / "annual_extract"
+EXTRACT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _pdf_sig_of(path) -> str:
+    st = Path(path).stat()
+    return hashlib.sha256(f"{Path(path).stem}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:12]
+
+
+def _code_pdf_sig(code: str) -> str:
+    """某公司全部已缓存 PDF 的合并指纹：任一 PDF 增删/变化即失效。"""
+    h = hashlib.sha256()
+    for p in sorted(CACHE_DIR.glob(f"{code}_*.pdf")):
+        st = p.stat()
+        h.update(f"{p.name}|{st.st_mtime_ns}|{st.st_size};".encode())
+    return h.hexdigest()[:12]
+
+
+def _extract_cache_get(kind: str, code: str):
+    try:
+        f = EXTRACT_CACHE_DIR / f"{kind}_{code}_{_code_pdf_sig(code)}.json"
+        if f.exists():
+            return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _extract_cache_put(kind: str, code: str, data):
+    try:
+        f = EXTRACT_CACHE_DIR / f"{kind}_{code}_{_code_pdf_sig(code)}.json"
+        f.write_text(json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8")
+    except Exception:
+        pass
 
 _CNINFO_QUERY = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 _STATIC = "http://static.cninfo.com.cn/"
@@ -247,6 +286,26 @@ _RE_HOLDER_ROW = re.compile(
 
 
 def extract_top_holders(pdf_path: str) -> list[dict]:
+    """(A2 缓存壳) PDF 身份未变时直接返回上次解析结果，跳过 PyMuPDF 全文解析。"""
+    try:
+        f = EXTRACT_CACHE_DIR / f"holders_{_pdf_sig_of(pdf_path)}.json"
+        if f.exists():
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(data, list) and data:
+                return data
+    except Exception:
+        pass
+    rows = _extract_top_holders_impl(pdf_path)
+    try:
+        if rows:
+            (EXTRACT_CACHE_DIR / f"holders_{_pdf_sig_of(pdf_path)}.json").write_text(
+                json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return rows
+
+
+def _extract_top_holders_impl(pdf_path: str) -> list[dict]:
     """从定期报告 PDF 抽取前十大股东名册（一手披露，含性质/比例/质押数量）。
 
     东财接口的「前十大股东」实为流通/快照口径（本公司实控人只显示 2.78% 的
@@ -846,6 +905,17 @@ def extract_business_chain(pdf_path: str) -> dict:
 
 
 def get_business_chain(code: str) -> dict | None:
+    """(A2 缓存壳) 公司已缓存 PDF 指纹未变时直接返回上次解析结果。"""
+    cached = _extract_cache_get("chain", code)
+    if cached is not None:
+        return cached
+    res = _get_business_chain_impl(code)
+    if res:
+        _extract_cache_put("chain", code, res)
+    return res
+
+
+def _get_business_chain_impl(code: str) -> dict | None:
     """一站式：取最新定期报告 + 解析。返回 {report, chain} 或 None（降级）。
 
     时效优先级：最新**半年度报告**（披露更晚、客户结构更新）→ 最新**年度报告**。
@@ -1166,6 +1236,17 @@ def extract_actual_controller(pdf_path: str) -> dict | None:
 
 
 def get_corporate_actions(code: str) -> dict | None:
+    """(A2 缓存壳) 公司已缓存 PDF 指纹未变时直接返回上次抽取结果。"""
+    cached = _extract_cache_get("actions", code)
+    if cached is not None:
+        return cached
+    res = _get_corporate_actions_impl(code)
+    if res:
+        _extract_cache_put("actions", code, res)
+    return res
+
+
+def _get_corporate_actions_impl(code: str) -> dict | None:
     """一站式：抽取分红决策、回购、实际控制人。返回 dict 或 None。
 
     时效优先：最新**半年度报告**（分红决策 + 最新一轮回购）→ 年报回退。

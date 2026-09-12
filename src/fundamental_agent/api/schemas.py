@@ -32,6 +32,8 @@ class TaskStatus(BaseModel):
     html_path: Optional[str] = None      # SUCCESS 时报告的本地路径
     code: str = ""                       # 绑定的股票代码，用于去重复用
     bk: str = ""                         # 绑定的对比基准板块（仅 industry 报告），用于去重复用
+    report_type: str = ""                # 报告类型（AUTH/CR-2026-09-11）：纳入去重键，
+                                         # 否则同股不同类型报告会复用同一任务、状态互相覆盖
 
 
 class ReportResponse(BaseModel):

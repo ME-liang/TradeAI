@@ -11,17 +11,21 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 import threading
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from .schemas import ReportRequest, TaskStatus
 from .tasks import TaskManager
 from fundamental_agent.main import run_pipeline
 from fundamental_agent.storage import report_output_path, save_report
+from fundamental_agent.auth import service as auth_service
+from fundamental_agent.auth.db import REMEMBER_TTL_DAYS, SESSION_TTL_DAYS
 
 # server.py -> api -> fundamental_agent -> src -> project_root
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +35,15 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="公司基本面分析 Agent API", version="0.1.0")
 tm = TaskManager()
 
+# CORS（方案阶段 1: APP 跨域调用需要）。Cookie 走前端 8000 同源代理, 此处不放开凭据。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def _code_ok(code: str) -> bool:
     return bool(code) and code.isdigit() and len(code) == 6
@@ -39,6 +52,10 @@ def _code_ok(code: str) -> bool:
 def _bk_ok(bk: str) -> bool:
     import re as _re
     return bool(_re.fullmatch(r"BK\d+", bk or ""))
+
+
+# 大陆手机号(注册接口服务端二次校验用, 与 fundamental_agent.auth.service 同口径)
+_PHONE_RE = re.compile(r"^1\d{10}$")
 
 
 def _reuse_today(code: str, report_type: str, bk: str = "") -> str | None:
@@ -141,7 +158,7 @@ def create_report(req: ReportRequest) -> TaskStatus:
     if req.report_type == "board":
         if not _bk_ok(req.bk):
             raise HTTPException(status_code=400, detail="板块报告必须提供有效的板块代码 bk（如 BK1036）")
-        task = tm.create("", bk=req.bk)
+        task = tm.create("", bk=req.bk, report_type="board")
         threading.Thread(target=_worker,
                          args=(task.task_id, "", req.use_llm, "board", req.bk, req.bk_name),
                          daemon=True).start()
@@ -162,12 +179,12 @@ def create_report(req: ReportRequest) -> TaskStatus:
     if not req.force:
         reuse = _reuse_today(code, req.report_type, req.bk)
         if reuse:
-            task = tm.create(code, bk=req.bk)
+            task = tm.create(code, bk=req.bk, report_type=req.report_type)
             tm.update(task.task_id, status="SUCCESS", progress=100,
                       stage="完成（复用当日已生成报告）", html_path=reuse)
             return task
 
-    task = tm.create(code, bk=req.bk)
+    task = tm.create(code, bk=req.bk, report_type=req.report_type)
     threading.Thread(target=_worker,
                      args=(task.task_id, code, req.use_llm, req.report_type, req.bk, req.bk_name),
                      daemon=True).start()
@@ -193,3 +210,154 @@ def get_html(task_id: str):
     if not p.exists():
         raise HTTPException(status_code=404, detail="报告文件缺失，可能已被清理")
     return FileResponse(p, media_type="text/html", filename=p.name)
+
+
+# ===== 账号认证（方案阶段 1: /api/auth/login、/logout、/me） =====
+
+def _session_cookie(token: str, max_age: int | None = None, clear: bool = False) -> str:
+    """会话 Cookie 串: HttpOnly + SameSite=Lax; 上 HTTPS 后由 Nginx/部署层补 Secure。
+
+    max_age=None  时不带 Max-Age → 浏览器会话 Cookie(关闭浏览器即失效, 对应未勾选「记住我」);
+    勾选「记住我」时传 REMEMBER_TTL_DAYS*86400 → 持久化 30 天。
+    """
+    parts = ["%s=%s" % (auth_service.SESSION_COOKIE, token),
+             "Path=/", "HttpOnly", "SameSite=Lax"]
+    if clear:
+        parts += ["Max-Age=0", "Expires=Thu, 01 Jan 1970 00:00:00 GMT"]
+    elif max_age is not None:
+        parts.append("Max-Age=%d" % max_age)
+    return "; ".join(parts)
+
+
+def _auth_token(req: Request) -> str | None:
+    """会话双通道: 优先 Cookie, 其次 Authorization: Bearer（APP 端用）。"""
+    token = req.cookies.get(auth_service.SESSION_COOKIE)
+    if token:
+        return token
+    authz = req.headers.get("authorization", "")
+    if authz.lower().startswith("bearer "):
+        return authz[7:].strip()
+    return None
+
+# ===== 登录态门禁（AUTH-B 2026-09-11）: /api/* 除认证端点外一律需有效会话 =====
+# 前端经 8000 同源代理携带 Cookie; APP/直连 8002 可用 Authorization: Bearer 双通道。
+# OPTIONS 放行（CORS 预检）; 认证端点（/api/auth/*）保持公开。
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next):
+    _p = request.url.path
+    if (request.method != "OPTIONS" and _p.startswith("/api/")
+            and not _p.startswith("/api/auth/")):
+        if auth_service.get_user_by_session(_auth_token(request)) is None:
+            return JSONResponse({"detail": "未登录或会话已过期"}, status_code=401)
+    return await call_next(request)
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: Request):
+    """账号密码登录: 验证通过创建会话并下发 HttpOnly Cookie。
+
+    remember=True(「记住我」勾选) → 会话与 Cookie 均延长至 REMEMBER_TTL_DAYS 天;
+    未勾选 → 服务端会话仍为 SESSION_TTL_DAYS 天, 但 Cookie 为浏览器会话级
+    (关闭浏览器即要求重新登录), 服务端过期后 /me 自动 401 回退登录页。
+    """
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    account = (data.get("account") or "").strip()
+    password = data.get("password") or ""
+    remember = bool(data.get("remember"))
+    user, token = auth_service.login(account, password, remember=remember)
+    if user is None:
+        return JSONResponse({"detail": "账号或密码不正确"}, status_code=401)
+    max_age = REMEMBER_TTL_DAYS * 86400 if remember else None
+    return JSONResponse(
+        {"ok": True, "user": user, "redirect": "/index.html"},
+        headers={"Set-Cookie": _session_cookie(token, max_age=max_age)},
+    )
+
+
+@app.post("/api/auth/logout")
+def auth_logout(req: Request):
+    """注销当前会话并清除 Cookie。"""
+    token = _auth_token(req)
+    auth_service.logout(token)
+    return JSONResponse(
+        {"ok": True},
+        headers={"Set-Cookie": _session_cookie("", clear=True)},
+    )
+
+
+@app.get("/api/auth/me")
+def auth_me(req: Request):
+    """当前登录用户(会话校验): Cookie 或 Bearer 双通道。"""
+    user = auth_service.get_user_by_session(_auth_token(req))
+    if user is None:
+        raise HTTPException(status_code=401, detail="未登录或会话已过期")
+    return user
+
+
+@app.get("/api/auth/captcha")
+def auth_captcha():
+    """图形验证码: 返回 captcha_id 与 SVG 图(前端点击可换一张)。"""
+    captcha_id, svg = auth_service.gen_captcha()
+    return JSONResponse({"captcha_id": captcha_id, "svg": svg})
+
+
+@app.post("/api/auth/register")
+async def auth_register(req: Request):
+    """注册: 校验图形验证码(错→400 captcha_failed, 前端提示重新输入)后创建账号。
+
+    服务端二次校验手机号格式与重复; 成功后跳登录页并预填手机号(不自动登录)。
+    """
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    phone = (data.get("phone") or "").strip()
+    password = data.get("password") or ""
+    if not _PHONE_RE.fullmatch(phone):
+        return JSONResponse({"detail": "请输入正确的手机号"}, status_code=400)
+    if not password:
+        return JSONResponse({"detail": "请输入密码"}, status_code=400)
+    if not auth_service.verify_captcha(data.get("captcha_id"), data.get("captcha_text")):
+        return JSONResponse(
+            {"detail": "图形验证码错误，请重新输入", "captcha_failed": True}, status_code=400
+        )
+    try:
+        user = auth_service.register_user(phone, password)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, status_code=400)
+    return JSONResponse({
+        "ok": True,
+        "user": user,
+        "redirect": "/login.html?account=%s&registered=1" % user["username"],
+    })
+
+
+@app.post("/api/auth/reset_password")
+async def auth_reset_password(req: Request):
+    """找回密码: 先校验图形验证码, 再按手机号重置密码。
+
+    - 验证码错误/过期 → 400 + captcha_failed(前端提示重新输入并刷新验证码)
+    - 账号不存在     → 404 "账号不存在"
+    - 成功           → 200, 旧会话已全部作废, 引导回登录页重新登录
+    """
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+    phone = (data.get("phone") or "").strip()
+    password = data.get("password") or ""
+    if not _PHONE_RE.fullmatch(phone):
+        return JSONResponse({"detail": "请输入正确的手机号"}, status_code=400)
+    if not password:
+        return JSONResponse({"detail": "请输入新密码"}, status_code=400)
+    if not auth_service.verify_captcha(data.get("captcha_id"), data.get("captcha_text")):
+        return JSONResponse(
+            {"detail": "图形验证码错误，请重新输入", "captcha_failed": True}, status_code=400
+        )
+    user = auth_service.reset_password(phone, password)
+    if user is None:
+        return JSONResponse({"detail": "账号不存在"}, status_code=404)
+    return JSONResponse({"ok": True, "redirect": "/login.html?account=%s&reset=1" % user["phone"]})

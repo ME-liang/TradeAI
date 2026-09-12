@@ -45,10 +45,80 @@ def _Silence():
 _GDFX_FREE_CACHE: dict = {}
 _GDFX_FREE_LOCK = threading.Lock()
 
+
 # 申万一级行业映射缓存（股票代码 -> {'l1': 申万一级, 'l3': 申万三级}）
 _CACHE_DIR = Path(__file__).resolve().parent / "_cache"
 _SW_L1_CACHE = _CACHE_DIR / "sw_l1_map.json"
 _SW_CACHE_MAX_AGE = 7 * 24 * 3600  # 7 天
+_SW_L1_REBUILD_TRIED = False  # 进程内防抖：全量重建至多一次（2026-09-11）
+_SW_CONS_FAILS = 0            # 申万成分接口连续失败计数（进程内，简易熔断）
+_SW_CONS_BREAKER = 2          # 连续失败达阈值后，本进程内快速失败（不再等超时）
+# 2026-09-10（速度优化）：东财「财务分析指标」7 天磁盘缓存——单次生成被重复调用
+# 约 14 次（build_statements 1 + 同业/对标循环逐股 ~13），是最大的重复网络开销。
+_FIN_IND_CACHE = _CACHE_DIR / "fin_indicators"
+_FIN_IND_CACHE_TTL = 7 * 24 * 3600  # 7 天（数据按报告期更新，TTL 安全）
+_FIN_IND_LOCK = threading.Lock()
+
+# A1 加强（2026-09-10）：申万二级同业取数（peers）当日磁盘缓存——即使逐股指标已缓存，
+# 成分定位+排序仍需 60s+，同业集每日复用；同公司/同行业当日重复生成不再重拉。
+_PEERS_CACHE = _CACHE_DIR / "peers_overview"
+_PEERS_CACHE_TTL = 24 * 3600
+
+# A1 强化（2026-09-11）：申万成分（index_component_sw）7 天磁盘缓存——成分定位需对
+# 所属一级下每个二级代码逐个请求申万官网（上游常单次数十秒，且**每次生成都重来**），
+# 是 peers 层动辄 10 分钟+ 的根因。成分调整半年度一次，7 天缓存安全；逐 L2 增量落盘，
+# 中断重跑可续（已缓存的 L2 直接跳过）。
+_SW_CONS_CACHE = _CACHE_DIR / "sw_cons"
+_SW_CONS_TTL = 7 * 24 * 3600
+
+
+# 抬头修复（2026-09-12）：股票「代码 → 公司简称」注册表。名称上游有三处
+# （东财个股画像 / 全市场代码名称表 / baostock 基础资料），但前两者同属东财系，
+# 限流时会**同时**失败，导致概况报告抬头渲染成「002384（002384）」。
+# 本注册表**仅作最后兜底**（实时源永远优先），一旦某次取到过名称即长期复用。
+_NAME_REGISTRY = _CACHE_DIR / "stock_names.json"
+_NAME_REG_LOCK = threading.Lock()
+
+
+def _name_registry_get(code: str) -> str:
+    try:
+        d = json.loads(_NAME_REGISTRY.read_text(encoding="utf-8"))
+        return str((d or {}).get(str(code)) or "").strip()
+    except Exception:
+        return ""
+
+
+def _name_registry_put(code: str, name: str) -> None:
+    name = str(name or "").strip()
+    if not name:
+        return
+    try:
+        with _NAME_REG_LOCK:
+            _NAME_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+            d = {}
+            if _NAME_REGISTRY.exists():
+                try:
+                    d = json.loads(_NAME_REGISTRY.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    d = {}
+            d[str(code)] = name
+            _NAME_REGISTRY.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _json_default(o):
+    try:
+        import numpy as _np
+        if isinstance(o, _np.integer):
+            return int(o)
+        if isinstance(o, _np.floating):
+            return float(o)
+        if isinstance(o, _np.bool_):
+            return bool(o)
+    except Exception:
+        pass
+    return str(o)
 
 # 慢接口总开关：关闭时不调用实测耗时过长或无效的 AkShare 接口，
 # 对应字段直接置空（上层展示为「未获取」），绝不让单个字段拖垮整条 pipeline。
@@ -333,13 +403,21 @@ class AkShareClient(DataClient):
                 age = time.time() - _SW_L1_CACHE.stat().st_mtime
                 if age < _SW_CACHE_MAX_AGE:
                     cached = json.loads(_SW_L1_CACHE.read_text(encoding="utf-8"))
-                    if isinstance(cached, dict) and len(cached) >= 4000:
+                    # 2026-09-11 修复：原阈值 4000 在部分行业上游失败时（实测长期
+                    # 2843 条）永不满足 → **每次调用都触发重建**（单次 10 分钟+），
+                    # 是「每次生成都慢」的根因。改为：新鲜且有一定规模即采用，
+                    # 缺行业公司由 peers 的静态兜底链处理，重建仅作最后手段。
+                    if isinstance(cached, dict) and len(cached) >= 1000:
                         return cached
         except Exception:
             pass
         # 重建限时 90s（守护线程）：申万上游偶发 socket 阻塞曾让报告生成挂 15 分钟+
         # （index_component_sw/sw_index_third_cons 无超时保护）。超时放弃重建，
         # 用旧缓存（残缺映射由独立工具 tools/rebuild_sw_map.py 在源可用时补齐）。
+        global _SW_L1_REBUILD_TRIED
+        if _SW_L1_REBUILD_TRIED:
+            return cached            # 本进程已尝试过重建：直接用现有缓存，杜绝重复重建
+        _SW_L1_REBUILD_TRIED = True
         mapping: dict = {}
         _t = threading.Thread(
             target=lambda: mapping.update(self._build_sw_l1_map()), daemon=True
@@ -379,6 +457,18 @@ class AkShareClient(DataClient):
 
     def get_company_profile(self, code: str) -> dict:
         code = self._norm_code(code)
+        # A1 同范式（2026-09-10）：7 天磁盘缓存——同业/对标循环逐股调用本函数，
+        # 无缓存时每次生成都对全部成分股重复拉取（数十只 × 数秒）。
+        _pf_cache = _FIN_IND_CACHE / f"profile_{code}.json"
+        try:
+            if _pf_cache.exists() and time.time() - _pf_cache.stat().st_mtime < _FIN_IND_CACHE_TTL:
+                _cached = json.loads(_pf_cache.read_text(encoding="utf-8"))
+                if isinstance(_cached, dict) and _cached.get("name"):
+                    # 顺手登记名称（缓存命中路径），保证注册表随使用自然累积
+                    _name_registry_put(code, _cached["name"])
+                    return _cached
+        except Exception:
+            pass
         profile: dict = {"code": code}
         if self._ak is None:
             return profile
@@ -418,6 +508,28 @@ class AkShareClient(DataClient):
                         profile["name"] = str(row.iloc[0]["name"]).strip()
             except Exception:
                 pass
+        # 抬头修复（2026-09-12）：上述两处名称源同属东财系，限流时同时失败 →
+        # 顶层 name 缺失 → 抬头退化为代码。此处补两个**独立**来源：
+        #   ① baostock query_stock_basic 的 code_name（独立上游，已用于行业/上市日兜底）
+        #   ② 本地「代码→简称」注册表（最后兜底，只在前两者都失败时使用）
+        if not profile.get("name"):
+            _bs_name = self._name_from_baostock(code)
+            if _bs_name:
+                profile["name"] = _bs_name
+        if not profile.get("name"):
+            _reg = _name_registry_get(code)
+            if _reg and not re.fullmatch(r"\d{6}", _reg):
+                profile["name"] = _reg
+        # 名称一旦取到即登记，后续生成不受上游波动影响（注册表仅作最后兜底）
+        if profile.get("name"):
+            _name_registry_put(code, profile["name"])
+        try:
+            if profile.get("name"):
+                with _FIN_IND_LOCK:
+                    _FIN_IND_CACHE.mkdir(parents=True, exist_ok=True)
+                    _pf_cache.write_text(json.dumps(profile, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
         return profile
 
     # ------------------------------------------------------------------
@@ -691,6 +803,35 @@ class AkShareClient(DataClient):
         except Exception:
             return ""
 
+    def _name_from_baostock(self, code: str) -> str:
+        """备用名称源：baostock `query_stock_basic` 的 code_name（公司简称）。
+
+        抬头修复（2026-09-12）：东财个股画像与代码名称表同属东财系，限流时
+        同时失败会让公司名整体缺失、报告抬头退化为股票代码；baostock 是项目中
+        已用于行业/上市日兜底的**独立上游**，其 code_name 字段即公司简称。
+        失败返回空串（沿用「缺数据→未获取」降级语义，不抛错）。
+        """
+        try:
+            import baostock as bs
+
+            prefixed = f"{'sh' if code[0] in '69' else 'sz'}.{code}"
+            with _Silence():
+                lg = bs.login()
+                if lg.error_code != "0":
+                    bs.logout()
+                    return ""
+                rs = bs.query_stock_basic(code=prefixed)
+                name = ""
+                if rs.error_code == "0":
+                    row = rs.get_row_data()
+                    if row:
+                        d = dict(zip(rs.fields, row))
+                        name = str(d.get("code_name") or "").strip()
+                bs.logout()
+            return name
+        except Exception:
+            return ""
+
     @ttl_cache(3600)
     def get_identity(self, code: str) -> dict:
         """01 身份识别：公司基础画像。
@@ -768,9 +909,27 @@ class AkShareClient(DataClient):
     # 财务分析指标（核心比率）
     # ------------------------------------------------------------------
     def get_financial_indicators(self, code: str) -> pd.DataFrame:
+        """东财「财务分析指标」全量历史（按报告期更新，2026-09-10 加 7 天磁盘缓存）。
+
+        缓存动机：该接口单次 2-6s 且无节流保护，单次基本面生成会被重复调用约
+        14 次（build_statements 1 次 + 同业/对标循环逐股 ~13 次），是最大的
+        重复网络开销。数据按报告期更新，7 天 TTL 安全；空结果不缓存（便于失败重试）。
+        """
         code = self._norm_code(code)
         if self._ak is None:
             return pd.DataFrame()
+        cache_file = _FIN_IND_CACHE / f"{code}.json"
+        try:
+            if cache_file.exists() and time.time() - cache_file.stat().st_mtime < _FIN_IND_CACHE_TTL:
+                recs = json.loads(cache_file.read_text(encoding="utf-8"))
+                if isinstance(recs, list) and recs:
+                    df = pd.DataFrame(recs)
+                    if "日期" in df.columns:
+                        df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
+                        df = df.dropna(subset=["日期"]).sort_values("日期").reset_index(drop=True)
+                    return df
+        except Exception:
+            pass  # 缓存损坏/解析失败 → 直拉上游
         try:
             df = self._ak.stock_financial_analysis_indicator(symbol=code)
             if df is None or df.empty:
@@ -779,6 +938,13 @@ class AkShareClient(DataClient):
                 df = df.copy()
                 df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
                 df = df.dropna(subset=["日期"]).sort_values("日期").reset_index(drop=True)
+            # 写缓存（仅非空结果；多线程下最坏重复写，内容一致无害）
+            try:
+                with _FIN_IND_LOCK:
+                    _FIN_IND_CACHE.mkdir(parents=True, exist_ok=True)
+                    df.to_json(cache_file, orient="records", force_ascii=False, date_format="iso")
+            except Exception:
+                pass
             return df
         except Exception:
             return pd.DataFrame()
@@ -908,20 +1074,46 @@ class AkShareClient(DataClient):
         "801080": ["801081", "801082", "801083"],  # 电子：半导体 / 其他电子Ⅱ / 元件
     }
 
-    def _component_sw_retry(self, symbol: str, tries: int = 3):
-        """拉取申万指数成分（申万指数官网，稳定源），带重试。"""
+    def _component_sw_retry(self, symbol: str, tries: int = 2):
+        """拉取申万指数成分（申万指数官网），走磁盘缓存 + 轻量重试。
+
+        2026-09-11：改为复用 `_index_component_sw_cached`（7 天磁盘缓存）——
+        此前每次生成都直连上游且默认重试 3 次，上游故障时单次耗时可达数分钟
+        （实测 600519 一次 peers 调用 624s）。重试降为 2 次，失败快速返回，
+        由上层「未获取」降级语义兜底。
+        """
         if self._ak is None:
             return None
         for _ in range(tries):
             try:
-                df = self._ak.index_component_sw(symbol=symbol)
-                if df is not None:
+                df = self._index_component_sw_cached(symbol)
+                if df is not None and not df.empty:
                     return df
             except Exception:
                 time.sleep(0.5)
         return None
 
     def get_industry_peers_overview(self, code: str, top_n: int = 8) -> list:
+        """(A1 加强 2026-09-10) 当日磁盘缓存壳：同业集每日复用，避免每次生成重拉。"""
+        try:
+            _pc = _PEERS_CACHE / f"{code}_{top_n}.json"
+            if _pc.exists() and time.time() - _pc.stat().st_mtime < _PEERS_CACHE_TTL:
+                data = json.loads(_pc.read_text(encoding="utf-8"))
+                if isinstance(data, list) and data:
+                    return data
+        except Exception:
+            pass
+        out = self._get_industry_peers_overview_impl(code, top_n)
+        try:
+            if out:
+                _PEERS_CACHE.mkdir(parents=True, exist_ok=True)
+                (_PEERS_CACHE / f"{code}_{top_n}.json").write_text(
+                    json.dumps(out, ensure_ascii=False, default=_json_default), encoding="utf-8")
+        except Exception:
+            pass
+        return out
+
+    def _get_industry_peers_overview_impl(self, code: str, top_n: int = 8) -> list:
         """公司概况报告用的「同业可比」列表（仅依赖稳定源，规避东财 push2 / 同花顺偶发封禁）。
 
         数据源：
@@ -943,9 +1135,24 @@ class AkShareClient(DataClient):
             sw_map = self._load_sw_l1_map()
             info = sw_map.get(code) or {}
             l1_name = info.get("l1", "")
-            if not l1_name:                       # 缓存缺失兜底：现场构建
-                sw_map = self._build_sw_l1_map()
-                l1_name = (sw_map.get(code) or {}).get("l1", "")
+            if not l1_name:
+                # 零网络兜底（2026-09-11）：证监会大类 → 申万一级静态映射。此前缺行业
+                # 公司会触发**无超时的全量重建**（实测单次 624s，且每次生成重来），
+                # 现改为静态映射优先，重建仅作最后手段且限时 90s、进程内至多一次。
+                try:
+                    _csrc = self._csrc_code_from_baostock(code)
+                    if _csrc:
+                        l1_name = self._csrc_to_sw(_csrc) or ""
+                except Exception:
+                    l1_name = ""
+            if not l1_name:
+                _rb = {"m": {}}
+                _th = threading.Thread(
+                    target=lambda: _rb["m"].update(self._build_sw_l1_map()), daemon=True
+                )
+                _th.start()
+                _th.join(90)
+                l1_name = (_rb["m"].get(code) or {}).get("l1", "")
             if not l1_name:
                 return []
             l1_code = next((c for c, n in _SW_L1_CODES.items() if n == l1_name), None)
@@ -1155,11 +1362,50 @@ class AkShareClient(DataClient):
         out.sort(key=lambda r: (r["gross_margin"] is None, -(r["gross_margin"] or 0)))
         return out
 
+    def _index_component_sw_cached(self, symbol: str):
+        """index_component_sw 的 7 天磁盘缓存（成分调整低频；上游慢且每次生成重复调用）。
+
+        熔断（2026-09-11）：上游故障时单次调用实测 ~60s，叠加重试可拖掉数分钟；
+        连续失败达阈值后本进程内直接快速失败，交由「未获取」降级语义兜底。
+        """
+        global _SW_CONS_FAILS
+        _f = _SW_CONS_CACHE / f"{symbol}.json"
+        try:
+            if _f.exists() and time.time() - _f.stat().st_mtime < _SW_CONS_TTL:
+                _recs = json.loads(_f.read_text(encoding="utf-8"))
+                if _recs:
+                    return pd.DataFrame(_recs)
+        except Exception:
+            pass
+        if _SW_CONS_FAILS >= _SW_CONS_BREAKER:
+            return None                      # 熔断：本进程不再等待上游超时
+        try:
+            d = self._ak.index_component_sw(symbol=symbol)
+            if d is None or d.empty:
+                _SW_CONS_FAILS += 1
+            else:
+                _SW_CONS_FAILS = 0
+        except Exception:
+            _SW_CONS_FAILS += 1
+            return None
+        if d is None or d.empty:
+            return d
+        try:
+            _SW_CONS_CACHE.mkdir(parents=True, exist_ok=True)
+            _f.write_text(
+                json.dumps(d.where(pd.notna(d), None).to_dict(orient="records"),
+                           ensure_ascii=False, default=_json_default),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        return d
+
     def _resolve_l2_constituents(self, code: str, l1_code: str):
         """返回公司所在申万二级的成分 DataFrame（index_component_sw，稳定源）；无则 None。"""
         for l2 in self._SW_L2_FALLBACK.get(l1_code, []):
             try:
-                d = self._ak.index_component_sw(symbol=l2)
+                d = self._index_component_sw_cached(l2)
             except Exception:
                 d = None
             if d is None or d.empty or "证券代码" not in d.columns:

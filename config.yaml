@@ -37,10 +37,12 @@ llm:
       base_url: https://api.deepseek.com/v1
       model: deepseek-v4-flash
       api_key_env: DEEPSEEK_API_KEY        # 已在 .env；余额耗尽时 router 自动跳过它
+      request_timeout: 300                 # C1 超时分级：非推理 flash 模型 300s 足够，避免故障时 600s×3 卡死
     - name: zhipu
       base_url: https://open.bigmodel.cn/api/paas/v4
       model: glm-4-flash
       api_key_env: ZHIPU_API_KEY           # 需在 .env 中补充；缺失则 router 跳过
+      request_timeout: 120                 # C1 超时分级：轻量 flash 120s
 
   # 向后兼容：若上方 providers 缺失，则沿用下方单厂商配置 + 环境变量 DEEPSEEK_BASE_URL
   # provider: deepseek
