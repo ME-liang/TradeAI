@@ -1,0 +1,29 @@
+{
+  "purpose": "Step 0 基线固化：contract 模式（现状实现）300184 overview 基线，供 WorkBuddy 复刻改造（writer 直写模式）灰度对比",
+  "created_at": "2026-09-12T15:05",
+  "branch": "fixReport",
+  "command": "PYTHONPATH=src python -m fundamental_agent.main --code 300184 --type overview --out output/reports/300184/overview/20260912/report.html",
+  "mode": "contract（generate_overview_content，LLM=qwen 路由首位）",
+  "baseline_html": "output/reports/300184/overview/20260912/report.html（运行目录内另有 report.baseline.html 副本；本目录 overview_300184_20260912.html 为随仓留档副本，.gitignore 已对 tests/golden/*.html 开白名单）",
+  "guard_rail": {
+    "rejections": 0,
+    "retries": 0,
+    "focused_call_exception": 1,
+    "note": "唯一异常为已知既性问题：[overview] 业务画像增强聚焦调用异常 'NoneType' object has no attribute 'get'（biz_enrich 路径，pipeline 不中断）；护栏拦截与重试均为 0"
+  },
+  "quality_stats": {
+    "html_chars": 76659,
+    "li": 14,
+    "table": 9,
+    "canvas": 6,
+    "missing_marker_未获取": 0,
+    "placeholder_示例": 0,
+    "third_party_非一手": 3
+  },
+  "golden_comparison": {
+    "力源信息_公司概况_300184_golden-B.html": {"html_chars": 30490, "li": 10, "table": 7, "canvas": 6, "未获取": 3, "示例": 0, "非一手": 3},
+    "力源信息_公司概况_300184_golden-C.html": {"html_chars": 56334, "li": 0, "table": 7, "canvas": 6, "未获取": 4, "示例": 0, "非一手": 4},
+    "conclusion": "baseline 体量与信息完整度不低于 golden-B/C（未获取 0 vs 3/4，canvas 6 持平，table 9 多于 7），判定基线健康，可作 Step 2 起改造对比的参照物"
+  },
+  "usage": "writer 模式灰度验收时，用同口径统计（字符量/li/table/canvas/未获取/示例/非一手 + 护栏命中计数）与本次 manifest 对比；护栏命中数不得高于本次基线，信息完整度不得低于本次基线"
+}

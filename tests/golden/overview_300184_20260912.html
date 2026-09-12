@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="VbM1szX39BgIARy2324mC5">
+<head data-page-node-id="Y4auYuEnsTdQcsrztPKVfE">
+<meta charset="UTF-8" data-page-node-id="ihabSK2wmgfMCcds5RlA8L">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="S5lwcpF8OyrVO8aGpIeaqw">
+<title>力源信息（300184）公司概况分析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --ink:#1b2330; --ink2:#4a5464; --ink3:#7b8494;
+    --line:#e4e7ec; --bg:#f6f7f9; --card:#ffffff;
+    --brand:#185fa5; --brand-soft:#e6f1fb;
+    --up:#d92d20; --down:#0f7b4f; --warn:#b54708; --warn-soft:#fef0e6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.65; font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 20px 64px}
+
+  header{margin-bottom:24px}
+  .eyebrow{font-size:12px;letter-spacing:.08em;color:var(--brand);font-weight:500;margin-bottom:8px}
+  h1{font-size:27px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+  .sub{color:var(--ink3);font-size:13px;margin-top:8px}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .badge{font-size:12px;padding:3px 9px;border-radius:5px;background:var(--brand-soft);color:var(--brand)}
+  .badge-2nd{font-size:11px;padding:2px 8px;border-radius:5px;background:var(--warn-soft);color:var(--warn);border:1px solid #f6d3b5;font-weight:500;margin-left:8px;white-space:nowrap;vertical-align:middle}
+  .badge-1st{font-size:11px;padding:2px 8px;border-radius:5px;background:var(--down-soft,#e7f5ee);color:var(--down);border:1px solid #b6e0cb;font-weight:500;margin-left:8px;white-space:nowrap;vertical-align:middle}
+
+  /* P1：年报一手来源——上下游原文引用卡片 */
+  .quote{border-left:3px solid var(--down);background:#f3faf6;border-radius:0 8px 8px 0;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--ink2);white-space:pre-line;line-height:1.7}
+  .q-page{display:inline-block;font-size:10.5px;font-weight:600;color:var(--down);background:#dcefe4;border-radius:4px;padding:1px 6px;margin-right:8px;vertical-align:middle}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
+  .chip{font-size:11.5px;padding:3px 10px;border-radius:999px;background:var(--brand-soft);color:var(--brand);border:1px solid #cfe2f5}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
+  h2{font-size:17px;font-weight:600;display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  h2 .num{font-size:12px;color:var(--brand);font-weight:500;font-variant-numeric:tabular-nums}
+  .lead{color:var(--ink3);font-size:13px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  h3{font-size:14px;font-weight:600;margin:18px 0 10px;color:var(--ink)}
+  h3:first-of-type{margin-top:4px}
+  p{margin-bottom:10px;color:var(--ink2)}
+  strong{color:var(--ink);font-weight:600}
+
+  .concl{background:linear-gradient(180deg,#f0f6fc,#ffffff);border:1px solid #c8ddf2;border-left:3px solid var(--brand)}
+  .concl p{font-size:14.5px;line-height:1.8;color:var(--ink);margin:0}
+
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--ink3);flex-shrink:0}
+  .kv .v{text-align:right;font-weight:500;font-variant-numeric:tabular-nums}
+
+  .metric{background:var(--bg);border-radius:8px;padding:12px 14px}
+  .metric .lab{font-size:12px;color:var(--ink3);margin-bottom:4px}
+  .metric .val{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.2}
+  .metric .note{font-size:11.5px;color:var(--ink3);margin-top:3px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--ink3);font-weight:500;font-size:12px;background:var(--bg)}
+  td{font-variant-numeric:tabular-nums}
+  tbody tr:last-child td{border-bottom:none}
+  .num-c{text-align:right}
+  .hl{background:#f0f6fc}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .kv .v.risk-high{color:#d9483b;font-weight:600}
+  .kv .v.risk-mid{color:#d9883b;font-weight:600}
+  .kv .v.risk-low{color:#8a94a6}
+  .ev-type{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;background:var(--brand-soft);color:var(--brand);border:1px solid #cfe2f5;margin-right:8px;white-space:nowrap;vertical-align:middle}
+  .mkt-meta{font-size:11.5px;color:var(--ink3);margin:2px 0 8px}
+  .bullbear{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+  .bb-col h4{margin:0 0 8px;font-size:13px}
+  .bb-col.bull h4{color:var(--up)}
+  .bb-col.bear h4{color:var(--down)}
+  .bb-col ul{margin-bottom:0}
+
+  .chart{position:relative;width:100%;height:280px;margin-top:6px}
+  .chart-lg{height:330px}
+
+  ul{margin:0 0 10px 18px;color:var(--ink2)}
+  li{margin-bottom:6px}
+
+  .flag{border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:0 8px 8px 0;padding:12px 16px;margin:12px 0}
+  .flag .t{font-weight:600;color:var(--warn);font-size:13px;margin-bottom:4px}
+  .flag p{margin:0;font-size:13px;color:var(--ink2)}
+
+  .note{font-size:12px;color:var(--ink3);margin-top:8px}
+  footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--ink3);line-height:1.8}
+
+  @media(max-width:640px){
+    .wrap{padding:20px 14px 48px}
+    h1{font-size:22px}
+    .card{padding:16px 16px}
+    .chart{height:240px}.chart-lg{height:280px}
+    table{font-size:12px}
+    th,td{padding:7px 6px}
+  }
+</style>
+</head>
+<body data-page-node-id="ICG2qnFB6Cege3ocn28NTq">
+<div class="wrap" data-page-node-id="BElnkCQHuqRy0SVFxBiOFb">
+
+<header data-page-node-id="m2CnPP8FCzCa2GC3jgDzUy">
+  <div class="eyebrow" data-page-node-id="OOwcmtnn86i3dO1GZJoxU1">公司概况分析 · COMPANY PROFILE</div>
+  <h1 data-page-node-id="gpHzOXGC2cICYpamasil1d">力源信息（300184）</h1>
+  <div class="sub" data-page-node-id="spNjsMlH0lu8hzrMdFG6vW"> &nbsp;|&nbsp; 报告日期：2026-09-12 &nbsp;|&nbsp; 财务数据截至最新报告期，行情数据截至 2026-09-11（延时行情）</div>
+  <div class="badges" data-page-node-id="dFiKJzH115SWwcGiOduWt2">
+    
+  </div>
+</header>
+
+<div class="card concl" data-page-node-id="np935NfEiKVBevp5YNUfDi">
+  <h2 data-page-node-id="11vYeXiyOOV4nIIkmct4gD"><span class="num" data-page-node-id="AZqwbRlH1VVtARmn6U971g">核心结论</span>一句话看这家公司</h2>
+  <div class="lead" style="border:none;margin-bottom:12px;padding-bottom:0" data-page-node-id="XrBCmEgjL8NAADrNx10QmV">按"实控人性质 + 行业 + 主营 + 增长来源 + 估值坐标 + 核心分歧 + 主要风险"七要素概括</div>
+  <p>力源信息为<strong>自然人+机构</strong>实控体系，业务覆盖电子元器件代理分销、自研芯片与泛在电力物联网终端，下游渗透新能源汽车、光伏、AI算力、工业控制等多赛道；收入以电子元器件分销为主（占比92.30%），毛利率约10%（元器件9.95%、模组6.83%、电力/芯片等23.90%）。增长主要来自代理分销放量与自研芯片放量，2023年营收与净利分别同比+59.46%与+209.50%。估值上ROE约6.37%低于同行，处于中等偏低水平，估值坐标受电力与芯片两条线共同支撑。核心分歧在自研芯片放量节奏与电力物联网拓展速度；主要风险为在押股份占比3.41%带来的质押与治理风险、代理分销依赖度较高及下游需求波动。</p>
+  
+</div>
+
+<!-- 01 身份识别 -->
+<div class="card" data-page-node-id="hmPh4XQ6r6DWdB7OhlG0Xy">
+  <h2 data-page-node-id="aIzbGrXn2c7X0n5rtuoCwO"><span class="num" data-page-node-id="v8o9HzfaZiCPrEzu5aMEBG">01</span>身份识别 · 它是谁</h2>
+  <div class="lead" data-page-node-id="blHD3mQD4cU3eqyVncOVz8">解答"这是一家什么性质的公司"——不列注册资本、法人代表这类无信息量的工商字段</div>
+
+  <div class="grid g3" style="margin-bottom:16px" data-page-node-id="xLYPhWvU2kGojURWngoU4R">
+    <div class="metric" data-page-node-id="Wy2EaGPB9Jx9vrGxfv6wYW"><div class="lab" data-page-node-id="wnNn3mUHKLeDbTG1yh1mAF">总股本</div><div class="val" data-page-node-id="150SIEJW0hGo8XXaNVE4Xf">11.49 亿股</div><div class="note" data-page-node-id="iNOBWUmXqRq3hbcEneTbYF">当前口径</div></div><div class="metric" data-page-node-id="Wy2EaGPB9Jx9vrGxfv6wYW"><div class="lab" data-page-node-id="wnNn3mUHKLeDbTG1yh1mAF">上市日期</div><div class="val" data-page-node-id="150SIEJW0hGo8XXaNVE4Xf">2011-02-22</div><div class="note" data-page-node-id="iNOBWUmXqRq3hbcEneTbYF">上市 15.6 年</div></div><div class="metric" data-page-node-id="Wy2EaGPB9Jx9vrGxfv6wYW"><div class="lab" data-page-node-id="wnNn3mUHKLeDbTG1yh1mAF">总资产</div><div class="val" data-page-node-id="150SIEJW0hGo8XXaNVE4Xf">84.00 亿</div><div class="note" data-page-node-id="iNOBWUmXqRq3hbcEneTbYF">截至 2026-06-30</div></div>
+  </div>
+
+  <h3 data-page-node-id="YYj8otIqWm8QHHqxfzhp60">关键识别字段</h3>
+  <div class="grid g2" data-page-node-id="jLBpseQwzHRdng29ebbd4f">
+    <div data-page-node-id="BtnSSYwbM7LlESX4nDb3xB">
+      <div class="kv" data-page-node-id="DfxuZJLbFIxQMD8FzBREE0"><span class="k" data-page-node-id="SsQUdR0MpCOV401SmgJbRk">成立日期</span><span class="v" data-page-node-id="EYpdE0kEV1yBZZlo84ELY3">2001-08-09</span></div><div class="kv" data-page-node-id="DfxuZJLbFIxQMD8FzBREE0"><span class="k" data-page-node-id="SsQUdR0MpCOV401SmgJbRk">上市日期</span><span class="v" data-page-node-id="EYpdE0kEV1yBZZlo84ELY3">2011-02-22</span></div><div class="kv" data-page-node-id="DfxuZJLbFIxQMD8FzBREE0"><span class="k" data-page-node-id="SsQUdR0MpCOV401SmgJbRk">法人代表</span><span class="v" data-page-node-id="EYpdE0kEV1yBZZlo84ELY3">赵马克</span></div><div class="kv" data-page-node-id="DfxuZJLbFIxQMD8FzBREE0"><span class="k" data-page-node-id="SsQUdR0MpCOV401SmgJbRk">注册资本</span><span class="v" data-page-node-id="EYpdE0kEV1yBZZlo84ELY3">11.47 亿元</span></div><div class="kv" data-page-node-id="DfxuZJLbFIxQMD8FzBREE0"><span class="k" data-page-node-id="SsQUdR0MpCOV401SmgJbRk">所属市场</span><span class="v" data-page-node-id="EYpdE0kEV1yBZZlo84ELY3">深交所创业板</span></div>
+    </div>
+    <div data-page-node-id="Swd2irJyNoDmCFOxK9L4C0">
+      <div class="kv" data-page-node-id="LjOEZTGLXMpvFzfjdK8BlP"><span class="k" data-page-node-id="Ys9q82frgVEDtXSm2Kq8S9">申万行业</span><span class="v" data-page-node-id="4sz2nr16W6H8HVtD4Bgy2W">电子</span></div><div class="kv" data-page-node-id="LjOEZTGLXMpvFzfjdK8BlP"><span class="k" data-page-node-id="Ys9q82frgVEDtXSm2Kq8S9">证监会行业</span><span class="v" data-page-node-id="4sz2nr16W6H8HVtD4Bgy2W">批发业</span></div><div class="kv" data-page-node-id="LjOEZTGLXMpvFzfjdK8BlP"><span class="k" data-page-node-id="Ys9q82frgVEDtXSm2Kq8S9">官方网站</span><span class="v" data-page-node-id="4sz2nr16W6H8HVtD4Bgy2W">www.icbase.com</span></div><div class="kv" data-page-node-id="LjOEZTGLXMpvFzfjdK8BlP"><span class="k" data-page-node-id="Ys9q82frgVEDtXSm2Kq8S9">入选指数</span><span class="v" data-page-node-id="4sz2nr16W6H8HVtD4Bgy2W">国证2000,国证Ａ指,中小创新</span></div><div class="kv" data-page-node-id="LjOEZTGLXMpvFzfjdK8BlP"><span class="k" data-page-node-id="Ys9q82frgVEDtXSm2Kq8S9">办公地址</span><span class="v" data-page-node-id="4sz2nr16W6H8HVtD4Bgy2W">湖北省武汉市东湖新技术开发区武大园三路5号</span></div>
+    </div>
+  </div>
+
+  <div class="flag" data-page-node-id="xR2Aw4Y2FBUKL78HUOKGJd">
+    <div class="t" data-page-node-id="bKSGlS7sDc4HDpMxofhWua">为什么"实控人性质"这一栏值得单独看</div>
+    <p>实控人赵马克（MARK ZHAO）直接持股 12,756.42 万股，占总股本 11.49 亿股的 11.10%，质押状态：无。自然人持股比例偏高，治理层面需重点关注实控人减持与股权质押动机，以及由此带来的控制权稳定性风险。</p>
+  </div>
+</div>
+
+<!-- 02 业务画像 -->
+<div class="card" data-page-node-id="0RCRDjlX7nxAFzxPev2NRS">
+  <h2 data-page-node-id="6MgJ1hHJ2fuAc6GGxQV6R9"><span class="num" data-page-node-id="DRr1ZX1liA85sw25gTQ8E5">02</span>业务画像 · 靠什么赚钱</h2>
+  <div class="lead" data-page-node-id="IDmHD9iVSTtc6kG4fBbTIF">概况的灵魂。不做"主要从事电子元器件研发、生产与销售"式的空话。本节包含：板块占比与毛利率、上下游合作方、分赛道增长空间</div>
+
+  <h3 data-page-node-id="0EBSraDEIrbXFKDSjM6Jox">收入结构（按产品口径）</h3>
+  <div class="chart" data-page-node-id="MAXsy1kH25AAqgVhQjMEWq"><canvas id="cMix" role="img" aria-label="主营业务构成占比图" data-page-node-id="oAaXnHw2QQfAvg6OHBL68c">电子元器件；结构模块器(模组)；电力产品、自研芯片等其他业务；</canvas></div>
+  <div class="note" data-page-node-id="nWXNkMTRKsNMzZfAJTLaVV">数据来源：东方财富主营构成（报告期 2026-06-30，按产品分类）；单位：收入/利润占比 %。</div>
+
+  <h3 data-page-node-id="tAf2JNPPYuSkXrkJWMsYsm">业务板块全景</h3>
+  <table data-page-node-id="brZqvPC2LSYAdOLCMNupqV">
+    <thead data-page-node-id="OHrbQY6wieFXmyDZgV4dcf"><tr data-page-node-id="REv3GwGRaJ0pmQHl1QDrMN"><th data-page-node-id="x9OnR08BdGXEXM3aohwOPA">板块</th><th class="num-c" data-page-node-id="G6XygRixpVj8a7JNK3NcbY">收入</th><th class="num-c" data-page-node-id="rHC3v6WmElZdjqQzUZyJKa">占比</th><th class="num-c" data-page-node-id="qC6OOiDDaFSHk4PEBAh2oW">毛利率</th><th class="num-c" data-page-node-id="3omN8pqp6yYpqCyuxk9TJr">利润占比</th><th data-page-node-id="041T1X0yfO6FrF1x15xb3h">性质</th></tr></thead>
+    <tbody data-page-node-id="KFl3w9ics4OIbmsRZz8vcE">
+      <tr class="hl" data-page-node-id="QipBkiFVuuIIZeDBJkotCE"><td data-page-node-id="6TFlyhNsUPpsY01nw7HuZB">电子元器件</td><td class="num-c" data-page-node-id="iy2KRGc7yG2xrawgDmRrmP">59.37 亿</td><td class="num-c" data-page-node-id="B85yotUTDUaWegc7pnU8lr">92.30%</td><td class="num-c" data-page-node-id="ormjDUzXBFC8Uea4Zc1FKO">9.95%</td><td class="num-c" data-page-node-id="WO5EJ5UN11GQuRF8T1jUJv">88.69%</td><td data-page-node-id="zF8HnptfuNYVB4N1SPTnXt"><strong data-page-node-id="C5GMCe4wD6nxGZ6g6NmWqA">绝对主体</strong></td></tr><tr class="" data-page-node-id="QipBkiFVuuIIZeDBJkotCE"><td data-page-node-id="6TFlyhNsUPpsY01nw7HuZB">结构模块器(模组)</td><td class="num-c" data-page-node-id="iy2KRGc7yG2xrawgDmRrmP">2.52 亿</td><td class="num-c" data-page-node-id="B85yotUTDUaWegc7pnU8lr">3.92%</td><td class="num-c" data-page-node-id="ormjDUzXBFC8Uea4Zc1FKO">6.83%</td><td class="num-c" data-page-node-id="WO5EJ5UN11GQuRF8T1jUJv">2.58%</td><td data-page-node-id="zF8HnptfuNYVB4N1SPTnXt"><strong data-page-node-id="C5GMCe4wD6nxGZ6g6NmWqA">补充</strong></td></tr><tr class="" data-page-node-id="QipBkiFVuuIIZeDBJkotCE"><td data-page-node-id="6TFlyhNsUPpsY01nw7HuZB">电力产品、自研芯片等其他业务</td><td class="num-c" data-page-node-id="iy2KRGc7yG2xrawgDmRrmP">2.43 亿</td><td class="num-c" data-page-node-id="B85yotUTDUaWegc7pnU8lr">3.78%</td><td class="num-c" data-page-node-id="ormjDUzXBFC8Uea4Zc1FKO">23.90%</td><td class="num-c" data-page-node-id="WO5EJ5UN11GQuRF8T1jUJv">8.72%</td><td data-page-node-id="zF8HnptfuNYVB4N1SPTnXt"><strong data-page-node-id="C5GMCe4wD6nxGZ6g6NmWqA">补充</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div class="chart chart-lg" data-page-node-id="Hiw3NMip0DY4lKIlwwHjbu"><canvas id="cGap" role="img" aria-label="各业务板块收入占比与利润占比对比" data-page-node-id="20ZotG6zkcpJvRLLh3qWy6">电子元器件；结构模块器(模组)；电力产品、自研芯片等其他业务；</canvas></div>
+  
+
+  <div class="flag" data-page-node-id="n7hi4OTiLEBTBjSZXOSZTV">
+    <div class="t" data-page-node-id="yAy7gkJdnNKnEOOF9wc9yT">关键发现：收入占比与利润贡献的错位</div>
+    <p>电力产品、自研芯片等其他业务 收入占比 3.78%、利润占比 8.72%，利润贡献高于收入占比约 4.9 个百分点，是利润结构中的高毛利引擎（毛利率 23.90%）。反观 电子元器件 收入占比 92.30% 但利润占比仅 88.69%，低毛利分销主业对整体利润形成稀释（Δ 3.6 个百分点）。</p>
+  </div>
+
+  
+  <h3 data-page-node-id="n3NMP1n86Z9oecyZ9NiGeS">三年分部趋势：一块在改善，一块在恶化</h3>
+  <table data-page-node-id="BaDRV5ERnbgQ613eV0GF4k">
+    <thead data-page-node-id="4VmCtW1M7eCdF5hax8RIid"><tr data-page-node-id="NfTG1jWLBZuQynPsa9KFud"><th data-page-node-id="aHE2yCeFrUwZvlv9XUWcwO">板块</th><th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">2023<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">收入 / 毛利率</th><th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">2024<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">收入 / 毛利率</th><th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">2025<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">收入 / 毛利率</th><th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">2026H1<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">收入</th><th class="num-c" data-page-node-id="PB9mlo23HSOcOrbNvDM9WB">近期收入</th><th class="num-c" data-page-node-id="GLk6l0zWvvB6CMoq2UDY1v">H1 同比</th></tr></thead>
+    <tbody data-page-node-id="NvS9eFeaxN3zNERNlxZCaa">
+      <tr class="hl" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo"><strong data-page-node-id="M4iWlD1dFlCjFyiBVd42dt">电子元器件</strong></td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">52.07 亿 / 9.76%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">68.55 亿 / 8.70%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">78.83 亿 / 9.51%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">59.37 亿</td><td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">59.37 亿</td><td class="num-c up" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">+65.7%</td></tr><tr class="" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo"><strong data-page-node-id="M4iWlD1dFlCjFyiBVd42dt">结构模块器件(模组)</strong></td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">4.36 亿 / 3.89%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">5.39 亿 / 6.16%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">4.83 亿 / 5.78%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">2.52 亿</td><td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">2.52 亿</td><td class="num-c up" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">+16.3%</td></tr><tr class="" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo"><strong data-page-node-id="M4iWlD1dFlCjFyiBVd42dt">电力产品、自研芯片等其他业务</strong></td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">3.01 亿 / 12.45%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">4.27 亿 / 21.79%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">5.01 亿 / 25.31%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">2.43 亿</td><td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">2.43 亿</td><td class="num-c up" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">+3.5%</td></tr><tr class="" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo">合计</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">59.44 亿 / 9.47%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">78.21 亿 / 9.24%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">88.67 亿 / 10.20%</td><td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">64.32 亿</td><td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">64.32 亿</td><td class="num-c up" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">+59.5%</td></tr>
+    </tbody>
+  </table>
+  <div class="note" data-page-node-id="eRQE9gSmHD40DFGPk6SVlk">数据来源：东方财富主营构成（按产品分类）。取最近 3 个完整年报与最新半年报（2023、2024、2025、2026H1）；H1 同比 = 最新半年报对上一同口径半年报。分类体系不一致的历史期次已剔除，不做拼接。</div>
+
+  <div class="chart" data-page-node-id="DwjeqotLTJHOcAN0Jo3P7h"><canvas id="cSelfDev" role="img" aria-label="自研/高毛利业务趋势" data-page-node-id="yzPK4QOcntXcor0reZEnbU">2023；2024；2025；2026H1；</canvas></div>
+  <div class="note" data-page-node-id="jpnFb5UHdj360pE9IlBsxU">口径：电力产品、自研芯片等其他业务（2023、2024、2025、2026H1，同口径对比）；数据来源：东方财富主营构成。</div>
+
+  <div class="flag"><div class="t">战略与现实的落差</div><p><strong>毛利率确实在改善：</strong>电力产品、自研芯片等其他业务毛利率从 2023 年 12.45% → 2024 年 21.79% → 2025 年 25.31%，三年提升了 12.9 个百分点，说明产品结构在往高端走。</p><p><strong>但收入增速在失速：</strong>这块业务 2024 年 +41.7%，2025 年 +17.3%。</p><p><strong>结果是占比倒退：</strong>在整体营收变化的背景下，电子元器件占比从 87.60% 升到 92.30%，电力产品、自研芯片等其他业务从 5.07% 降到 3.78%。高毛利业务的占比不升反降，公司离「双核心」更远了。</p><p><strong>更值得警惕的是研发投入：</strong>2025年研发费用 3815.66 万元，同比-33.85%。</p></div>
+  
+
+  
+  
+  <h3 data-page-node-id="CR72trOiLgFi7nzBE4XnUT">上游：代理了谁的产品线<span class="badge-1st" data-page-node-id="92hDk6R02aJDoPFqAzONPl">一手来源·《2026年半年度报告》</span></h3>
+  <p data-page-node-id="8TFdMeiINlCJFOd67NhDUn">代理权是分销商的生命线。公司代理<strong>上百条国内外原厂线</strong>，按阵营与品类拆分如下（一手来源：公司年报「释义 / 主营业务」章节列示的授权代理原厂品牌）：</p>
+  <table data-page-node-id="QreFUj1LNVknkgG8nAP4g7">
+    <thead data-page-node-id="QmIWcrmy9UGoEehF4h72SL"><tr data-page-node-id="GDfbczKut86hOjZAEh132p"><th style="width:110px" data-page-node-id="gTqtayINbSFJ2rKyE5NlOP">阵营</th><th data-page-node-id="jBcI5NYDHQ90FFpSVHRgvR">主要原厂</th><th style="width:34%" data-page-node-id="WvSDo2n9lc9zc7cK09cZBM">主供品类</th></tr></thead>
+    <tbody data-page-node-id="Pfgcy1NNGmOuJYdTTsIJHI">
+      <tr class="hl" data-page-node-id="CYSeeBdNKrQsN9MTwv3toE"><td data-page-node-id="sjrjcGHtg23nwmNmU9FnDb"><strong data-page-node-id="EnIPIoRA3WYmYN7VoJzzS5">日系（核心）</strong></td><td data-page-node-id="lVpxR1R31wCRawVXeD5y9q">MURATA（村田）、SONY（索尼）、ROHM（罗姆）、KIOXIA（铠侠）、JAE（航空电子）、RUBYCON（路碧
+康）、OMRON（欧姆龙）、ALPS（阿尔卑斯）、JST（日压）、KDS（大真空）</td><td data-page-node-id="snoOGjlC1NB2AKDTCP8Gy1">MLCC、电感、磁珠、传感器/摄像头、存储、继电器、晶振</td></tr><tr class="" data-page-node-id="CYSeeBdNKrQsN9MTwv3toE"><td data-page-node-id="sjrjcGHtg23nwmNmU9FnDb"><strong data-page-node-id="EnIPIoRA3WYmYN7VoJzzS5">欧美系</strong></td><td data-page-node-id="lVpxR1R31wCRawVXeD5y9q">ON（安森美）、VISHAY（威世）、Syntiant（芯智元）、KNOWLES（楼世）、ST（意法）、AMPLEON（安赋
+隆）、AB（FPC）</td><td data-page-node-id="snoOGjlC1NB2AKDTCP8Gy1">功率器件（含碳化硅）、MOSFET、MCU、硅麦、动铁喇叭、指纹芯片、LED</td></tr><tr class="" data-page-node-id="CYSeeBdNKrQsN9MTwv3toE"><td data-page-node-id="sjrjcGHtg23nwmNmU9FnDb"><strong data-page-node-id="EnIPIoRA3WYmYN7VoJzzS5">国产线</strong></td><td data-page-node-id="lVpxR1R31wCRawVXeD5y9q">思特威、兆易创新、长鑫存储、上海移远、华为海思、江波龙、佰维存储、昂瑞微、斯达半导、格兰菲、锐能微、思瑞浦 等 21 家</td><td data-page-node-id="snoOGjlC1NB2AKDTCP8Gy1">MCU、存储、图像传感器、功率器件、模拟芯片、计量芯片、模组</td></tr><tr class="" data-page-node-id="CYSeeBdNKrQsN9MTwv3toE"><td data-page-node-id="sjrjcGHtg23nwmNmU9FnDb"><strong data-page-node-id="EnIPIoRA3WYmYN7VoJzzS5">中国台湾</strong></td><td data-page-node-id="lVpxR1R31wCRawVXeD5y9q">EGIS（神盾）</td><td data-page-node-id="snoOGjlC1NB2AKDTCP8Gy1">指纹识别芯片</td></tr>
+    </tbody>
+  </table>
+  <div class="note" data-page-node-id="Hmf3HqryzMKlwsYS9Eyn0E">一手来源·《2026年半年度报告》释义与主营业务章节；国产线来自主营业务概述段落列举（思特威、兆易创新、长鑫存储、上海移远 等），代理分销产品涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED、GPU 等。「主供品类」为按年报授权品类与授权证书段落归纳的口径，非逐家披露。代理权是分销商的核心壁垒，原厂资质与产品线广度决定其上游话语权。</div>
+  
+    <div class="note"><strong>供应商高度集中（2025 年度披露）：</strong>前五大供应商采购额 <strong>48.89 亿元</strong>，占年度采购总额 <strong>59.93%</strong>。其中第一大供应商采购 17.94 亿元（占 21.99%，定期报告未披露名称）。头部原厂授权的稳定性直接决定公司货源与议价能力，代理权集中是分销商的护城河，也是供给侧单一依赖的风险点。</div>
+  <div class="note" data-page-node-id="Hmf3HqryzMKlwsYS9Eyn0E">一手来源·《2026年半年度报告》释义与主营业务章节；国产线来自主营业务概述段落列举（思特威、兆易创新、长鑫存储、上海移远 等），代理分销产品涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED、GPU 等。「主供品类」为按年报授权品类与授权证书段落归纳的口径，非逐家披露。代理权是分销商的核心壁垒，原厂资质与产品线广度决定其上游话语权。</div>
+
+  
+  <h3 data-page-node-id="FlDXOM2Q6cqSDyjb88eXAl">下游：卖给谁<span class="badge-1st" data-page-node-id="5zG2F5qeEAaMvirAbAHNF2">一手来源·《2026年半年度报告》</span></h3>
+  
+  
+  <p data-page-node-id="ir5FEVZKDv6JYDlKNEj7bh">客户网络是第二资产。按应用领域归类（基于年报披露的客户名单动态归纳）：</p>
+  <table data-page-node-id="TBldnCustTable01">
+    <thead data-page-node-id="TBldnCustHead001"><tr data-page-node-id="TBldnCustHeadRow1"><th style="width:104px" data-page-node-id="TBldnCustH1">应用领域</th><th data-page-node-id="TBldnCustH2">代表客户</th><th class="num-c" style="width:110px" data-page-node-id="TBldnCustH3">表现</th><th class="num-c" style="width:76px" data-page-node-id="TBldnCustH4">数据期</th></tr></thead>
+    <tbody data-page-node-id="TBldnCustBody001">
+      <tr class="hl" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>智能电网</strong></td><td data-page-node-id="TBldnCustC2">国家电网、南方电网、威胜集团、华鹏智能、威铭能源、烽火通信、欣祥电子、思行达、佳源科技、米格电气</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2026H1</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>物联网卡</strong></td><td data-page-node-id="TBldnCustC2">庆视互联、安克创新、海芯威视、九安智能、思创力维、泉峰科技、洛普股份、赫曦智能、南京大全、熊猫电子</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2026H1</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>服务器及电源</strong></td><td data-page-node-id="TBldnCustC2">欧陆通、MPS（美国芯源系统有限公司）、联宝、核达中远通、长城电源</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2025年报</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>光模块</strong></td><td data-page-node-id="TBldnCustC2">新易盛、海信多媒体、光迅科技、联特科技、华工正源（华工科技）、钧恒科技（汇绿生态）、天孚通信</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2025年报</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>算力</strong></td><td data-page-node-id="TBldnCustC2">寒武纪、云尖信息、上海燧原</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2025年报</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>工业及新能源</strong></td><td data-page-node-id="TBldnCustC2">上能电气、麦田能源、宁波德业、禾迈新能源、锦浪科技、优优绿能、竹鹤科技（拓竹科技）</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2025年报</td></tr><tr class="" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>汽车电子</strong></td><td data-page-node-id="TBldnCustC2">吉利、比亚迪、理想、赛力斯、小鹏、北汽</td><td class="num-c " data-page-node-id="TBldnCustC3">—</td><td class="num-c" data-page-node-id="TBldnCustC4">2025年报</td></tr>
+    </tbody>
+  </table>
+  
+  <div class="note"><strong>客户集中度（2025 年度，最近一期披露）：</strong>前五大客户销售额 <strong>17.30 亿元</strong>，占营业收入 <strong>19.51%</strong>——第一名 7.98 亿（9.00%）、第二名 3.53 亿（3.98%）、第三名 2.47 亿（2.79%）、第四名 2.01 亿（2.26%）、第五名 1.31 亿（1.48%）。客户集中度相对健康，无单一大客户依赖。</div>
+  
+  <h3 data-page-node-id="PrtnrNetH3d001">深度合作网络</h3>
+  <p data-page-node-id="PrtnrNetP0001">合作网络是业务模式的直接证据。下列合作方与合作关系均取自公司定期报告的一手披露：</p>
+  <table data-page-node-id="PrtnrNetTbl0001">
+    <thead data-page-node-id="PrtnrNetThd001"><tr data-page-node-id="PrtnrNetThr001"><th style="width:22%" data-page-node-id="PrtnrNetTh1">合作方</th><th style="width:20%" data-page-node-id="PrtnrNetTh2">合作关系</th><th data-page-node-id="PrtnrNetTh3">合作内容</th></tr></thead>
+    <tbody data-page-node-id="PrtnrNetTbd001">
+      <tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>MURATA（村田）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>ON（安森美）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>ST（意法）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>SONY（索尼）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>ROHM（罗姆）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>KIOXIA（铠侠）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>VISHAY（威世）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>JAE（航空电子）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>AMPLEON（安赋
+隆）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>RUBYCON（路碧
+康）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>Syntiant（芯智元）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>OMRON（欧姆龙）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>ALPS（阿尔卑斯）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>KNOWLES（楼世）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>AB（FPC）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>JST（日压）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>EGIS（神盾）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>KDS（大真空）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>上游芯片原厂ON（安森美）</strong></td><td data-page-node-id="PrtnrNetTd2">联合/战略合作（联合实验室）</td><td data-page-node-id="PrtnrNetTd3">此外，报告期内，公司与上游芯片原厂ON（安森美）设立的碳化硅联合实验室一方面为下游新能 源汽车、充电、光伏、储能等领域客户提供了测试和技术服务，支持市场和销售团队的客户导入；另一 方面积极推进实验室中国检测机构和实验室强制认证（CMA）及中国合格评定国家认可委员会（CNAS） 认证工作，并于2026 年3 月获得CMA 证书。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>AMPLEON（安赋隆）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>RUBYCON（路碧康）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr><tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>LUMILEDS（流明）</strong></td><td data-page-node-id="PrtnrNetTd2">上游芯片原厂 · 授权代理</td><td data-page-node-id="PrtnrNetTd3">公司代理分销其芯片产品线（公司代理品类涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA、EEPROM、LED 等）。</td></tr>
+    </tbody>
+  </table>
+  <div class="note" data-page-node-id="PrtnrNetNote01">深度合作网络取自《2026年半年度报告》（2026 年中报）一手披露：授权代理关系来自释义章节列示的原厂品牌；联合/战略合作条目为报告原文整句摘录，可溯源。</div>
+  
+  
+  <div class="chips" data-page-node-id="d5CqrEha7PzBoVwWIVRGNN"><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">新能源汽车</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">汽车电子</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">储能</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">光伏</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">AI 算力</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">消费电子</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">工业控制</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">医疗</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">家电</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">数据中心</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">机器人</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">物联网</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">安防</span><span class="chip" data-page-node-id="qkGoA2xSLbjIz8gvTbedYv">电源</span></div>
+  
+  <div class="note" data-page-node-id="ONGaL4wDFnLSlXb5D3oOHQ">数据来源：主期·《2026年半年度报告》（半年度报告，报告期 2026-06-30）；补充期：《2025年年度报告》；客户名单与表现判断由系统从定期报告「主营业务/行业情况」章节原文抽取归纳，各行数据期见「数据期」列；客户集中度为最近一期披露数据。</div>
+  
+
+  
+  <h3 data-page-node-id="EwQkmgvAO7vMlPnOJJrA2g">增长空间：分三个层次看<span class="badge-2nd" data-page-node-id="KxQAZibcBWwV4aFkMOw41n">非一手来源·待核实</span></h3>
+  <table data-page-node-id="FS8tYHpVcaQ4AzHtpRRJta">
+    <thead data-page-node-id="NLpAEQvVpGmWS4BPGPkwS0"><tr data-page-node-id="rh5d2RmJ88Hb9JupDPjqEa"><th style="width:104px" data-page-node-id="nSVbNlsM4IoIGmNs27ZCAw">层次</th><th data-page-node-id="d6vMHYZw3oaJfD5rTcSs11">赛道</th><th data-page-node-id="pLsASGeMtUfbHxfQcZUUCw">市场空间与增速</th><th class="num-c" data-page-node-id="tkVxbk9Fyi4hL2iDrJsh07">确定性</th></tr></thead>
+    <tbody data-page-node-id="WyVANfwNLfkzMH6QstvfhQ">
+      <tr class="" data-page-node-id="EJr5Ak4OY2Uh6M02cFGLLv"><td data-page-node-id="DjxbmRsFEemf4s131M5oKL"><strong data-page-node-id="o69NwlmcfprtgkHH1y9DBl">层次一</strong></td><td data-page-node-id="haxT3Jjmb2sZDJtCcGZWXe"><strong data-page-node-id="u4CEfXrzq3mVm3TXbXwHYO">电子元器件代理份额深化</strong></td><td data-page-node-id="EqQgQ5kj9GGiLIFnN0hRoA">授权原厂电子元器件市场约3000亿元（待核实），年复合增速约6%-8%（基于原厂代工赛道历史）</td><td class="num-c" data-page-node-id="F6br7b4utqwFufCLPWlaM8"><strong data-page-node-id="nRnEhDGSl9jCaDU2gcM9Kp">中</strong></td></tr><tr class="" data-page-node-id="EJr5Ak4OY2Uh6M02cFGLLv"><td data-page-node-id="DjxbmRsFEemf4s131M5oKL"><strong data-page-node-id="o69NwlmcfprtgkHH1y9DBl">层次二</strong></td><td data-page-node-id="haxT3Jjmb2sZDJtCcGZWXe"><strong data-page-node-id="u4CEfXrzq3mVm3TXbXwHYO">原厂产品线扩张</strong></td><td data-page-node-id="EqQgQ5kj9GGiLIFnN0hRoA">电力产品线（如IGBT/MOSFET）年增速约15%-20%，自研芯片（功率/控制）随车规可靠性认证周期约12-18个月</td><td class="num-c" data-page-node-id="F6br7b4utqwFufCLPWlaM8"><strong data-page-node-id="nRnEhDGSl9jCaDU2gcM9Kp">中</strong></td></tr><tr class="" data-page-node-id="EJr5Ak4OY2Uh6M02cFGLLv"><td data-page-node-id="DjxbmRsFEemf4s131M5oKL"><strong data-page-node-id="o69NwlmcfprtgkHH1y9DBl">层次三</strong></td><td data-page-node-id="haxT3Jjmb2sZDJtCcGZWXe"><strong data-page-node-id="u4CEfXrzq3mVm3TXbXwHYO">新能源汽车高景气应用渗透</strong></td><td data-page-node-id="EqQgQ5kj9GGiLIFnN0hRoA">新能源汽车电子市场规模约2000亿元（待核实），2024年增速约25%+（高景气）</td><td class="num-c" data-page-node-id="F6br7b4utqwFufCLPWlaM8"><strong data-page-node-id="nRnEhDGSl9jCaDU2gcM9Kp">高</strong></td></tr>
+    </tbody>
+  </table>
+  
+
+  <h3 data-page-node-id="2m6brjMlGdMMkYyMFLpNMl">增长的硬约束</h3>
+  <ul data-page-node-id="x8uUTb4DQL3GBF4zXKyxQc">
+    <li>综合毛利率10.35%且电子元器件毛利率9.95%，受原厂代理毛利低与结构模块毛利率6.83%拖累，扩张受限</li><li>经营现金流/净利润34.10%偏低，净利三年复合-8.62%显示净利增长不可持续，需依赖收入与现金流改善</li><li>原厂授权与库存周转周期（MLCC/SJ-MOSFET/BMS等）对周转天数与资金占用形成刚性约束</li>
+  </ul>
+
+  <div class="flag" data-page-node-id="fKp55gWsa023GAPALz8yNE">
+    <div class="t" data-page-node-id="y9ZX1tO48LlBem4vK0sfuO">交叉验证</div>
+    <p>上游授权原厂（日本10家、美国4家、欧洲3家、中国台湾1家，核心品类含 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA）支撑其授权分销主业（核心板块 电子元器件收入占比 92.30%）。下游应用于 新能源汽车、汽车电子、储能、光伏、AI 算力、消费电子 等领域，与年报「主营业务/行业情况」章节表述一致，验证其「授权分销 + 下游高景气应用」的商业闭环。</p>
+  </div>
+</div>
+
+<!-- 03 股权与治理 -->
+<div class="card" data-page-node-id="1vyYs3XCrkc12VD3uCUsoH">
+  <h2 data-page-node-id="CWsNJTGLXaR4kMspHFMc9n"><span class="num" data-page-node-id="jam8cDKL7r5HeVBixXcGbn">03</span>股权治理 · 谁控制、怎么分钱</h2>
+  <div class="lead" data-page-node-id="HCkrBn2KfgJQLsDLn2SPeh">A 股语境下的风险高发区：质押、减持、分红能力、审计意见</div>
+
+  
+  <h3 data-page-node-id="qDTFXg5MRAHS1jIRzFDYIk">前十大股东（2026 年中报）</h3>
+  <table data-page-node-id="56qvZqpzahC2MtuArVkhzd">
+    <thead data-page-node-id="MQoMcO3MZkJ7O4IISlGkQ2"><tr data-page-node-id="UisRRAVlI7ymUmDZXW007L"><th data-page-node-id="JS7R9s4IFsDjPlcGu8W3oa">股东名称</th><th data-page-node-id="VtfoVD8YFxjAUwNGZcIfx1">性质</th><th class="num-c" data-page-node-id="uFJwAb5wg9ELHzKDqNAyMw">持股比例</th><th class="num-c" data-page-node-id="mDr71CA3iZRmbqAOhxUQe1">持股数（万股）</th><th class="num-c" data-page-node-id="ZNuZevDIFkxOfXTm0NHT6G">质押/冻结</th></tr></thead>
+    <tbody data-page-node-id="CyGecG1wQiwWlIkvrLHMS0">
+      <tr class="hl" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">MARK ZHAO</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境外自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">11.10%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">12,756.42</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">张跃军</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">2.89%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">3,320.00</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">余军</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">1.60%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">1,836.21</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">刘胜刚</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">1.13%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">1,292.84</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">李欣</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">1.06%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">1,220.08</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">乌鲁木齐融冰股权投资合伙企业（有限合伙）</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内非国有法人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">0.84%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">966.71</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">香港中央结算有限公司</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境外法人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">0.61%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">697.05</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">华沛投资有限公司</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内非国有法人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">0.44%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">503.34</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">周信钢</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">0.34%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">386.99</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr><tr class="" data-page-node-id="XkLtwlZt57vkoGRntWSlIZ"><td data-page-node-id="UnekX2n6yEKHaYizCgAfot">吴芳</td><td data-page-node-id="Cv2QYoHFZi8ZyOwZF8XRYw">境内自然人</td><td class="num-c" data-page-node-id="u7IVlSAdhxjGQLNzy2EE6V">0.33%</td><td class="num-c" data-page-node-id="r9xmMuLWMZsgV3SgRMugTw">380.77</td><td class="num-c" data-page-node-id="sjIEupaUOoSFUlfSUDYf86">无</td></tr>
+    </tbody>
+  </table>
+  <div class="note" data-page-node-id="WSUaVzJhUPafzYPRxBODTg">前十大股东为《2026年半年度报告》披露的股东名册口径（2026 年中报），持股比例/股东性质/质押数量均取自名册原文（总持股含限售股）；质押、标记或冻结情况以名册披露为准。数据来源：定期报告股东名册（PyMuPDF 确定性抽取）。</div>
+  
+
+  
+  <h3 data-page-node-id="898qpMEAAuvfZMl63C6xfB">分红与股东回报</h3>
+  <div class="grid g3" data-page-node-id="LKb3QO7zxAWjZga6Tn0eAj">
+    <div class="metric" data-page-node-id="INgSAAcwGXg4iRDl5jdKPv"><div class="lab" data-page-node-id="EBZBwfeQO3mbofAwlrjkWm">分红类型</div><div class="val" data-page-node-id="TtjEfRCCdyRQn0BAl6LMJ0">半年度分红</div><div class="note" data-page-node-id="4D6b2G9ntI28Y2lo8wqw4z">2026半年报</div></div>
+  </div>
+  <div style="margin-top:12px" data-page-node-id="W1IRentHCY8nXkeHT7ATDb"><p>最近一期分红方案（2026半年报）：不派发现金红利、不送红股、不以公积金转增股本（母公司未弥补亏损，以回购注销视同现金分红）。</p></div>
+  
+
+  
+  <h3 data-page-node-id="Rp8hKq2mZ4nT7vXbN1cQdE">股份回购</h3>
+  <div class="grid g3" data-page-node-id="Kp2wNv5tLx9mQr3ZbY6sHaF">
+    <div class="metric" data-page-node-id="Qn7xT2vBc8mRk4LpWz3jFdG"><div class="lab" data-page-node-id="Zm5vC9nQx2wLb7TkRj4hGyH">已回购股数</div><div class="val" data-page-node-id="Tc4bX8nVm2qLk6RwPj9sZuJ">197.31 万股</div><div class="note" data-page-node-id="Bn3mQ7vTx5wLc8RkJh2zYdK">2026 年已实施</div></div><div class="metric" data-page-node-id="Qn7xT2vBc8mRk4LpWz3jFdG"><div class="lab" data-page-node-id="Zm5vC9nQx2wLb7TkRj4hGyH">回购用途</div><div class="val" data-page-node-id="Tc4bX8nVm2qLk6RwPj9sZuJ">注销并减少注册资本</div><div class="note" data-page-node-id="Bn3mQ7vTx5wLc8RkJh2zYdK">完成于 2026-06-01</div></div>
+  </div>
+  
+  <div style="margin-top:12px" data-page-node-id="Wm8nQ3vBx6tLk9RcZj5hPdL"><p>2026 年回购方案于 2026-06-01 实施完毕，累计回购 1,973,093 股（约 197.31 万股），已全部注销并用于减少注册资本。</p></div>
+
+  
+  <h3 data-page-node-id="Ct5kQw8nVx3mRb7ZjL2hNdP">实际控制人</h3>
+  <div class="grid g3" data-page-node-id="Aw7tNv2mKx9pQr4ZbY6sJdF">
+    <div class="metric" data-page-node-id="Ed9xT5vBn2mQk8RpWz4jHyG"><div class="lab" data-page-node-id="Rs3mQ8vTx5wLc7RkJh2zNdK">实际控制人</div><div class="val" data-page-node-id="Uv6bX2nVm8qLk3RwPj9sZuJ">赵马克</div><div class="note" data-page-node-id="Yn4mQ7vTx2wLb9RkFh5zYdK">境外自然人｜2026-06-30</div></div><div class="metric" data-page-node-id="Ed9xT5vBn2mQk8RpWz4jHyG"><div class="lab" data-page-node-id="Rs3mQ8vTx5wLc7RkJh2zNdK">持股比例</div><div class="val" data-page-node-id="Uv6bX2nVm8qLk3RwPj9sZuJ">11.10%</div><div class="note" data-page-node-id="Yn4mQ7vTx2wLb9RkFh5zYdK">年报口径总持股（含限售），列第 1 位</div></div><div class="metric" data-page-node-id="Ed9xT5vBn2mQk8RpWz4jHyG"><div class="lab" data-page-node-id="Rs3mQ8vTx5wLc7RkJh2zNdK">持股数</div><div class="val" data-page-node-id="Uv6bX2nVm8qLk3RwPj9sZuJ">12,756.42 万股</div><div class="note" data-page-node-id="Yn4mQ7vTx2wLb9RkFh5zYdK">东方财富快照列示的 2.78% 为其 25% 无限售可转让额度，非总持股</div></div>
+  </div>
+  
+  <div style="margin-top:12px" data-page-node-id="Zk2nQ9vBx4tLm6RcZj8hPdL"><p>实际控制人为 赵马克（MARKZHAO，境外自然人），截至 2026-06-30 持有 12,756.42 万股，占总股本 11.10%，在定期报告前十大股东名册中列第 1 位；一致行动人：高惠谊。需注意口径差异：东方财富前十大股东快照列示的 2.78% 为高管每年可转让额度（无限售部分，恰为总持股的 25%），并非持股总数下降；上表比例采用最新定期报告名册口径（报告期总股本随回购注销缩小，比例较年报口径小幅上升）。</p></div>
+
+  
+  <h3 data-page-node-id="TFYlm4ffTmLKEJ2wdcV2x4">治理风险扫描</h3>
+  <div class="grid g2" data-page-node-id="z5KSqIWysVKek4xYvUG2Hm">
+    <div data-page-node-id="0agGlmr0z2BCJcRWmuc62M">
+      <div class="kv" data-page-node-id="ZQtgmGr0DcTYZSYABMYppP"><span class="k" data-page-node-id="5DwsksOP81phffj11h8xAi">未解押质押笔数</span><span class="v up" data-page-node-id="JPmzOfYRbcRFOTeTC3tgUM">6 笔</span></div><div class="kv" data-page-node-id="ZQtgmGr0DcTYZSYABMYppP"><span class="k" data-page-node-id="5DwsksOP81phffj11h8xAi">未解押占总股本</span><span class="v up" data-page-node-id="JPmzOfYRbcRFOTeTC3tgUM">3.41%（按当前总股本）</span></div><div class="kv" data-page-node-id="ZQtgmGr0DcTYZSYABMYppP"><span class="k" data-page-node-id="5DwsksOP81phffj11h8xAi">在押主要股东</span><span class="v up" data-page-node-id="JPmzOfYRbcRFOTeTC3tgUM">侯红亮 3.41%</span></div>
+    </div>
+    <div data-page-node-id="0uBVIKLeyKULgDeskkPdFm">
+      
+    </div>
+  </div>
+  <div class="note" data-page-node-id="BCKMGsgX7F2AFdmo7LlDbH">截至 2020-09-19 公告，未解押质押 6 笔，占总股本 3.41%（按当前总股本）；在押主要股东为 侯红亮（3.41%），<strong>该股东不在最新前十大股东名单内</strong>（非控股股东、非前十大）；控股股东／实际控制人历史质押<strong>已全部解押，当前无在押</strong>。质押主体为财务投资者而非控股股东，控制权层面的质押风险有限，但仍需关注其减持节奏对二级市场流动性的冲击。</div>
+  
+</div>
+
+<!-- 04 行业坐标 -->
+<div class="card" data-page-node-id="EHyzmGkDYOI7RlF06eoJyh">
+  <h2 data-page-node-id="d58vBCPqFoQoqb3Uv2pICC"><span class="num" data-page-node-id="Yc7E9Cmeix78CBUDZUSfy2">04</span>行业坐标 · 在什么赛道、排第几</h2>
+  <div class="lead" data-page-node-id="VkFrGs8LEGEo3d5Ki0v3js">没有对比的绝对值没有意义——给出位置感</div>
+
+  
+
+  
+  <h3 data-page-node-id="3cKP6tLS5umiguP9QQ4rIm">同业毛利率对比</h3>
+  <div class="chart" data-page-node-id="XQ14ULga8pc1pIHjjk63UH"><canvas id="cPeer" role="img" aria-label="同业毛利率对比" data-page-node-id="Rfc2RJOFs5wXCiX6TfPxYD">商络电子；雅创电子；香农芯创；力源信息；润欣科技；深圳华强；英唐智控；好上好；中电港；</canvas></div>
+  <div class="note" data-page-node-id="345BZ0MyoRAZG9IPzafl60">可比公司按<strong>业务实质</strong>精选（同商业模式的人工可比集，含本公司），毛利率为自算口径 (营业总收入−营业成本)/营业总收入，期间为各公司最新报告期（2026H1）；深色柱为本公司，用于横向定位其在同业中的位置。</div>
+  
+
+  
+  <h3 data-page-node-id="F8VnUbEgFlxYTjeBBeUB1w">同业横比（按业务实质精选可比公司）</h3>
+  <table data-page-node-id="j1c9ELlY99zder4GHBRWJW">
+    <thead data-page-node-id="xEbHjQeT5Ia8k0MYi4g7pt"><tr data-page-node-id="tGWmAzdHuLbPNGCjj9u8sX"><th data-page-node-id="99yRDUiJAMjpDillQjVAFI">公司</th><th data-page-node-id="rYOhEAA9hnnrRFiNtau05i">代码</th><th class="num-c" data-page-node-id="JiQ0sDZWoM5F1kHG1XtF2g">营收(亿元)</th><th class="num-c" data-page-node-id="4c9liDb24odtRdFlncZGqs">毛利率(%)</th><th class="num-c" data-page-node-id="SQmReCaITSGWGsdJUaRHi7">ROE(%)</th><th class="num-c" data-page-node-id="Pn9EUk1V3IBw59z3kGqiR4">营收增速(%)</th><th class="num-c" data-page-node-id="pLZG1BWxYKCVxzMymCWfYp">净利润增速(%)</th><th class="num-c" data-page-node-id="NnIJmJLECEhfZ9mt8Bnu8o">资产负债率(%)</th></tr></thead>
+    <tbody data-page-node-id="HA0UbpywpsDZ2CL9Jh53Mo">
+      <tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">商络电子</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">300975</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">85.48</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">15.21</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">17.76</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">121.56</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">541.91</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">75.76</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">雅创电子</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">301099</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">66.12</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">12.3</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">15.41</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">118.68</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">489.71</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">72.55</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">香农芯创</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">300475</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">352.51</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">11.61</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">51.01</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">251.60</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">2838.31</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">74.06</td></tr><tr class="hl" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB"><strong data-page-node-id="l2wrNLw2VEVVBHXBuAW7oU">力源信息</strong></td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">300184</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">88.67</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">10.35</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">6.37</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">59.46</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">209.50</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">44.43</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">润欣科技</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">300493</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">28.88</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">9.58</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">3.87</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">1.79</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">56.10</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">39.69</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">深圳华强</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">000062</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">249.09</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">7.71</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">5.67</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">60.65</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">65.56</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">61.42</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">英唐智控</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">300131</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">55.86</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">7.7</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">-0.17</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">5.09</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">-121.52</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">51.57</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">好上好</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">001298</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">83.7</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">5.28</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">8.33</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">90.18</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">332.32</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">70.29</td></tr><tr class="" data-page-node-id="oDXc7OJt8czFyavroSnXET"><td data-page-node-id="P05ZrTo3aRZSgiGIeB21XB">中电港</td><td data-page-node-id="aq9GFWgh5hEqKvNOIIBdkB">001287</td><td class="num-c" data-page-node-id="ieguA46GsDUWJVNOc2yL1X">655.25</td><td class="num-c" data-page-node-id="PmSdb7OdKwjW5LEQD0RQmy">2.85</td><td class="num-c" data-page-node-id="HMSTp7tNkqj5k9HfbCBGEG">8.82</td><td class="num-c" data-page-node-id="6yXy9ZXoCAAkDsCEnbrsS2">119.40</td><td class="num-c" data-page-node-id="LaxvmeyZQ1I0FRuI5LR92L">183.64</td><td class="num-c" data-page-node-id="ecuEVEENactE91tVjd5pvd">88.65</td></tr>
+    </tbody>
+  </table>
+  <div class="note" data-page-node-id="Pp9wQ2vNx5tLk8RcZj3hMdE">口径提示：表中「营收」为各公司<strong>最新年报（2025年报）</strong>口径，而「毛利率 / ROE / 营收增速 / 净利增速 / 资产负债率」为<strong>最新报告期（2026H1）</strong>口径——两者期间不同，横向对比时请勿视为同期数据。</div>
+  <div class="note" data-page-node-id="rERB2zMfAWeiGO2Bm3HQC1">按业务实质精选 9 家同商业模式可比公司（含本公司高亮行），非申万二级成分——后者会混入商业模式迥异的公司，对比无意义。</div>
+  
+
+  <h3 data-page-node-id="YjcyWAOO1M7xLeTkEFGMuL">在行业中的位置</h3>
+  
+  <div class="grid g4" data-page-node-id="dFL7VIZVs2UqsddVPBlmj5">
+    <div class="metric" data-page-node-id="8IEWouxade2yQIY2sepYcP"><div class="lab" data-page-node-id="42M2OOC2T8B5fUZNTQKCkp">可比公司</div><div class="val" data-page-node-id="ENa0a5iqWDDvGKG2Ag891R">9 家</div><div class="note" data-page-node-id="jiDODM4cgkZ0Hv82FGO80w">同业对比（含本公司）</div></div><div class="metric" data-page-node-id="8IEWouxade2yQIY2sepYcP"><div class="lab" data-page-node-id="42M2OOC2T8B5fUZNTQKCkp">申万行业</div><div class="val" data-page-node-id="ENa0a5iqWDDvGKG2Ag891R">电子</div><div class="note" data-page-node-id="jiDODM4cgkZ0Hv82FGO80w">一级分类</div></div><div class="metric" data-page-node-id="8IEWouxade2yQIY2sepYcP"><div class="lab" data-page-node-id="42M2OOC2T8B5fUZNTQKCkp">证监会行业</div><div class="val" data-page-node-id="ENa0a5iqWDDvGKG2Ag891R">批发业</div><div class="note" data-page-node-id="jiDODM4cgkZ0Hv82FGO80w">行业归属</div></div>
+  </div>
+  
+
+  <h3 data-page-node-id="gu3u5QIt1MJUgQiig3DTbF">护城河与位置</h3>
+  <ul data-page-node-id="WKlnbtAkADnqH7njbpZGM0">
+    <li>上游授权壁垒：授权代理 18 家海外/本土芯片原厂品牌（含 M、U、R、A、T、A 等），代理权是电子元器件分销的核心进入壁垒，竞争对手难以短期复制（一手来源·年报）。</li><li>产品线广度与高可靠品类：产品/代理体系涵盖 MLCC、SJ-MOSFET、BMS、IGBT、MCU、PA 等多品类，并向车规级、工业级高可靠 SKU 延伸，提升客户粘性与单价。</li><li>规模化经营壁垒：主营集中于电子元器件（核心板块收入占比 92.30%），规模化带来采购/产能与账期优势，形成对中小竞争者的成本壁垒。</li><li>同业盈利位置：综合毛利率 10.35%，在 8 家可比公司中列第 4 位，反映其产品结构与客户质量相对行业水平的位置。</li>
+  </ul>
+</div>
+
+<!-- 05 财务速写 -->
+<div class="card" data-page-node-id="u7bHryAZiu0di3OlS9IjBG">
+  <h2 data-page-node-id="rZXS2hCAGO4cFLjSr64eUq"><span class="num" data-page-node-id="tW6M3Uwo6wWVTXTE0DDnUO">05</span>财务速写 · 几个数抓全貌</h2>
+  <div class="lead" data-page-node-id="qc3UFszV9fBAHP1GxaUqrP">控制在十个数字以内：成长、质量、估值三维</div>
+
+  <h3 data-page-node-id="3o3tLSKrx712o4wTieprpg">业绩轨迹</h3>
+  <div class="chart chart-lg" data-page-node-id="VemROJCacdsT8aR0QTlNB7"><canvas id="cTrend" role="img" aria-label="业绩趋势" data-page-node-id="HuSoVJtVx5DlGmvaOIq0r9">2023年报；2024年报；2025年报；2026H1；</canvas></div>
+  <div class="note" data-page-node-id="q6ejBiPkrT7dHnHUiOKEYp">数据来源：三表计算（截至 2026-06-30）。营收同比 59.46%、净利同比 209.50%；趋势图与同比指标均由系统直接计算，未经模型改写。</div>
+
+  <h3 data-page-node-id="eYoqcunaP5431qA5qtvJq5">关键财务指标</h3>
+  <div class="grid g4" data-page-node-id="6wi7T01XItgU2pnvKNeLHA">
+    <div class="metric" data-page-node-id="5eBHQYijsCXVagw1oqmX1G"><div class="lab" data-page-node-id="8sJAVagwzxu18xW3Ry9C6k">ROE</div><div class="val" data-page-node-id="I9Gn2T4LF5BiMCj8dIRtgw">6.37%</div><div class="note " data-page-node-id="oZy9ZCH9ZjZKh1rIEjfreE">净资产收益率｜2026H1</div></div><div class="metric" data-page-node-id="5eBHQYijsCXVagw1oqmX1G"><div class="lab" data-page-node-id="8sJAVagwzxu18xW3Ry9C6k">毛利率</div><div class="val" data-page-node-id="I9Gn2T4LF5BiMCj8dIRtgw">10.35%</div><div class="note " data-page-node-id="oZy9ZCH9ZjZKh1rIEjfreE">自算 (营收−成本)/营收｜2026H1</div></div><div class="metric" data-page-node-id="5eBHQYijsCXVagw1oqmX1G"><div class="lab" data-page-node-id="8sJAVagwzxu18xW3Ry9C6k">净利率</div><div class="val" data-page-node-id="I9Gn2T4LF5BiMCj8dIRtgw">4.63%</div><div class="note " data-page-node-id="oZy9ZCH9ZjZKh1rIEjfreE">销售净利率｜2026H1</div></div><div class="metric" data-page-node-id="5eBHQYijsCXVagw1oqmX1G"><div class="lab" data-page-node-id="8sJAVagwzxu18xW3Ry9C6k">资产负债率</div><div class="val" data-page-node-id="I9Gn2T4LF5BiMCj8dIRtgw">44.43%</div><div class="note " data-page-node-id="oZy9ZCH9ZjZKh1rIEjfreE">总负债 / 总资产｜2026H1</div></div>
+  </div>
+
+  <h3 data-page-node-id="g0sVkYflGr1ydHubrnCQLM">成长性 · 质量 · 估值</h3>
+  <div class="grid g2" data-page-node-id="Yqo7DJ5uEA2CYgzY37S5IU">
+    <div data-page-node-id="kcjid52haHM0ZurxYUUsNw">
+      <div class="kv" data-page-node-id="LU376TYKlKpT4vBV8UfIC8"><span class="k" data-page-node-id="o8vNcbeu2t99j2GQw4apLF">营收同比（2026H1）</span><span class="v up" data-page-node-id="bF63CNcvBVHIwD8NKxRCtG">59.46%</span></div><div class="kv" data-page-node-id="LU376TYKlKpT4vBV8UfIC8"><span class="k" data-page-node-id="o8vNcbeu2t99j2GQw4apLF">净利同比（2026H1）</span><span class="v up" data-page-node-id="bF63CNcvBVHIwD8NKxRCtG">209.50%</span></div><div class="kv" data-page-node-id="LU376TYKlKpT4vBV8UfIC8"><span class="k" data-page-node-id="o8vNcbeu2t99j2GQw4apLF">营收 CAGR（3Y）</span><span class="v up" data-page-node-id="bF63CNcvBVHIwD8NKxRCtG">3.32%</span></div><div class="kv" data-page-node-id="LU376TYKlKpT4vBV8UfIC8"><span class="k" data-page-node-id="o8vNcbeu2t99j2GQw4apLF">净利 CAGR（3Y）</span><span class="v down" data-page-node-id="bF63CNcvBVHIwD8NKxRCtG">-8.62%</span></div>
+    </div>
+    <div data-page-node-id="v9oEFgYM92vQihDBkaOiWJ">
+      <div class="kv" data-page-node-id="FlKiTkDN8sfdLMlelPqAuF"><span class="k" data-page-node-id="kbX2g4mV0OnOZR8TFIlPXX">每股净资产</span><span class="v " data-page-node-id="7MW9XPp5Js3KBLtnjYp0AP">4.06 元</span></div><div class="kv" data-page-node-id="FlKiTkDN8sfdLMlelPqAuF"><span class="k" data-page-node-id="kbX2g4mV0OnOZR8TFIlPXX">研发费率（2026H1）</span><span class="v " data-page-node-id="7MW9XPp5Js3KBLtnjYp0AP">0.28%</span></div><div class="kv" data-page-node-id="FlKiTkDN8sfdLMlelPqAuF"><span class="k" data-page-node-id="kbX2g4mV0OnOZR8TFIlPXX">经营现金流净额（2026H1）</span><span class="v up" data-page-node-id="7MW9XPp5Js3KBLtnjYp0AP">1.01 亿</span></div><div class="kv" data-page-node-id="FlKiTkDN8sfdLMlelPqAuF"><span class="k" data-page-node-id="kbX2g4mV0OnOZR8TFIlPXX">PE(TTM) / PB</span><span class="v " data-page-node-id="7MW9XPp5Js3KBLtnjYp0AP">PE 22.57 / PB 2.88</span></div>
+    </div>
+  </div>
+
+  <div class="flag" data-page-node-id="AB5dNYxDbtdH5ZJIH3ov3X">
+    <div class="t" data-page-node-id="pL2uvIj2OscBnEzt2J3ydY">现金流背离：经营现金流仅为净利润的 34.1%——利润的现金含量偏低，需关注应收账款与存货对资金的占用</div>
+  </div>
+  <div class="chart" data-page-node-id="C0g6XppO5mxGK9lKvhHNR8"><canvas id="cCash" role="img" aria-label="净利润与经营现金流对比" data-page-node-id="vNGGgrFOvqFSEw6cLCVaVp">2023年报；2024年报；2025年报；2026H1；</canvas></div>
+  <div class="note" data-page-node-id="HbGJbN240SzcQOxs9xI8dD">经营现金流/净利润 = 34.10%，利润现金含量偏低，关注应收与存货对资金的占用。</div>
+
+  <h3 data-page-node-id="uPkclEfK6XGqDmUjXbBLQH">资产端的压力</h3>
+  <div class="grid g3" data-page-node-id="RBhjdpI8BZDCIhgqNtC5tl">
+    <div class="metric" data-page-node-id="4nWzDOdZIBlygX4FWomtFO"><div class="lab" data-page-node-id="7cCrVFLAUbolJp6ddM9upD">存货周转天数</div><div class="val" data-page-node-id="VbXsh31pSG0a1fkKgvCx2z">61.3 天</div><div class="note" data-page-node-id="HUH5CQAhkxB9HqW0cUdSH4">越短越好｜2026H1</div></div><div class="metric" data-page-node-id="4nWzDOdZIBlygX4FWomtFO"><div class="lab" data-page-node-id="7cCrVFLAUbolJp6ddM9upD">应收周转天数</div><div class="val" data-page-node-id="VbXsh31pSG0a1fkKgvCx2z">70.4 天</div><div class="note" data-page-node-id="HUH5CQAhkxB9HqW0cUdSH4">回款速度｜2026H1</div></div><div class="metric" data-page-node-id="4nWzDOdZIBlygX4FWomtFO"><div class="lab" data-page-node-id="7cCrVFLAUbolJp6ddM9upD">经营现金流 / 净利润</div><div class="val" data-page-node-id="VbXsh31pSG0a1fkKgvCx2z">34.1%</div><div class="note" data-page-node-id="HUH5CQAhkxB9HqW0cUdSH4">利润的现金含量｜2026H1</div></div>
+  </div>
+</div>
+
+<!-- 06 动态与风险 -->
+<div class="card" data-page-node-id="VSHdr0db9p5NSFlcLCzF5m">
+  <h2 data-page-node-id="kQVNgAUr7tY1cnMpaF4uEA"><span class="num" data-page-node-id="3aDv5DhezY3vmXF5P5FV3O">06</span>动态与风险 · 正在发生什么</h2>
+  <div class="lead" data-page-node-id="QeIizbyQyl2jJTbHO1A9Uz">决定报告时效感的一层：行情资金面 + 近一年重大事项 + 多空逻辑 + 风险清单</div>
+
+  <!-- P2-E1：行情与资金面（延时行情 + 融资融券） -->
+  
+  <h3 data-page-node-id="mktH1">行情与资金面（延时行情）</h3>
+  <div class="mkt-meta" data-page-node-id="mktM">行情：2026-09-11（延时行情，东方财富 push2delay，非实时价）；融资融券：2026-09-10（东方财富 datacenter）。数据存在滞后，仅供参考。</div>
+  <div class="grid g3" data-page-node-id="mktG">
+    <div class="kv" data-page-node-id="mktKV"><span class="k">最新价</span><span class="v down">11.71 元</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">涨跌幅</span><span class="v down">-0.76%</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">总市值</span><span class="v ">134.27 亿</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">流通市值</span><span class="v ">122.91 亿</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">PE(TTM)</span><span class="v ">22.57</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">PB(市净率)</span><span class="v ">2.88</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">换手率</span><span class="v ">3.86%</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">融资余额</span><span class="v ">11.70 亿</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">融资占流通市值</span><span class="v ">9.45%</span></div><div class="kv" data-page-node-id="mktKV"><span class="k">近一日融资买入</span><span class="v ">0.22 亿</span></div>
+  </div>
+  
+
+  <h3 data-page-node-id="1Vhw3O958jGsXshhroP68J">近期重大事项（近一年，倒序）</h3>
+  <table data-page-node-id="FbZSVqICQDIgm4LpE0ohLa">
+    <thead data-page-node-id="Ew52GCk3KmwrydG7zyGpAi"><tr data-page-node-id="7AAxLNKBamn0rTSEhsegJd"><th style="width:88px" data-page-node-id="vwDSAwc8AW2cEC1NieB9YD">日期</th><th style="width:104px" data-page-node-id="evT">类型</th><th data-page-node-id="idSJQVOMmQQ4hA5HbyRuz8">事项</th></tr></thead>
+    <tbody data-page-node-id="LuVOzMlV43jCi5rJ2Mv4t5">
+      <tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-29</td><td><span class="ev-type" data-page-node-id="evType">董事会决议公告</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:第六届董事会第十六次会议决议公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-29</td><td><span class="ev-type" data-page-node-id="evType">公司章程</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:公司章程(2026年8月28日)</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-29</td><td><span class="ev-type" data-page-node-id="evType">召开股东大会通知</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于召开2026年第四次临时股东会的通知</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-27</td><td><span class="ev-type" data-page-node-id="evType">股本变动</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于以集中竞价交易方式回购股份注销完成暨股份变动公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-21</td><td><span class="ev-type" data-page-node-id="evType">回购实施公告</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于以集中竞价交易方式回购公司股份实施完成的公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-20</td><td><span class="ev-type" data-page-node-id="evType">提供/对外担保公告</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于公司为全资子(孙)公司提供担保的进展公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-13</td><td><span class="ev-type" data-page-node-id="evType">回购实施公告</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于以集中竞价交易方式首次回购公司股份的公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-11</td><td><span class="ev-type" data-page-node-id="evType">提供/对外担保公告</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于公司为全资子(孙)公司提供担保的进展公告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-10</td><td><span class="ev-type" data-page-node-id="evType">资金占用</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:2026年半年度非经营性资金占用及其他关联资金往来情况汇总表</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-10</td><td><span class="ev-type" data-page-node-id="evType">半年度报告全文</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:2026年半年度报告</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-10</td><td><span class="ev-type" data-page-node-id="evType">半年度报告摘要</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:2026年半年度报告摘要</td></tr><tr class=""><td data-page-node-id="mGmz1561JP1jSyDFYF26Sw">2026-08-08</td><td><span class="ev-type" data-page-node-id="evType">回购报告书</span></td><td data-page-node-id="ARcSyQGAIOwFKGwT8bcEMK">力源信息:关于以集中竞价交易方式回购公司股份用于注销并减少注册资本报告书</td></tr>
+    </tbody>
+  </table>
+
+  <h3 data-page-node-id="cuIjcoINfs58taUi4tgAR5">市场当前的核心逻辑与分歧</h3>
+  <ul data-page-node-id="p8aLqaZCN336QEKBYrFg4o">
+    <li>下游高景气应用驱动：受益 新能源汽车、汽车电子、储能、光伏、AI 算力、消费电子 等领域需求，尤其新能源与算力侧的结构性增量，是市场对其成长的主要定价逻辑。</li><li>上游原厂供给与品类扩张：依托授权原厂（日本10家、美国4家、欧洲3家、中国台湾1家）向紧缺与高可靠品类延伸，决定其可分销 SKU 的弹性与增量空间。</li><li>低毛利 + 周转驱动：综合毛利率仅 10.35%，盈利高度依赖规模与周转，市场关注其能否通过高毛利品类改善盈利质量。</li><li>现金流与利润背离：经营现金流/净利润为 34.10%，利润含金量偏低是当前主要分歧点，需关注应收账款与存货对资金的占用。</li>
+  </ul>
+
+  <!-- P2-E3：多空逻辑（数据层确定性派生） -->
+  
+  <h3 data-page-node-id="bbH1">多空逻辑</h3>
+  <div class="bullbear" data-page-node-id="bbG">
+    <div class="bb-col bull" data-page-node-id="bbBull">
+      <h4 data-page-node-id="bbBuH">看多逻辑</h4>
+      <ul data-page-node-id="bbBuU">
+        <li data-page-node-id="bbLi1">分销主业毛利率 10.4%，处于同业可比中位区间，体现授权代理壁垒</li><li data-page-node-id="bbLi1">营收同比增长 59.5%，下游需求回暖带动景气上行</li><li data-page-node-id="bbLi1">净利润同比增长 209.5%，盈利弹性释放</li><li data-page-node-id="bbLi1">代理全球一线原厂产品线（涵盖 MLCC、SJ-MOSFET、BMS、IGBT 等品类），渠道壁垒稳固</li><li data-page-node-id="bbLi1">国产替代与供应链安全趋势下，授权分销商的渠道价值与下游覆盖优势凸显</li>
+      </ul>
+    </div>
+    <div class="bb-col bear" data-page-node-id="bbBear">
+      <h4 data-page-node-id="bbBeH">看空逻辑</h4>
+      <ul data-page-node-id="bbBeU">
+        <li data-page-node-id="bbLi2">经营现金流/净利润仅 34.1%，利润现金含量偏低，质量存疑</li><li data-page-node-id="bbLi2">股权质押占总股本 3.41%，关注减持与流动性冲击</li><li data-page-node-id="bbLi2">融资余额占流通市值 9.45%，杠杆资金集中放大波动</li><li data-page-node-id="bbLi2">分销业重资产运营（存货+应收占用大），行业下行时周转与跌价压力大</li><li data-page-node-id="bbLi2">毛利率受原厂返点政策与原厂直供趋势挤压，长期存在被渠道绕开风险</li>
+      </ul>
+    </div>
+  </div>
+  
+
+  <h3 data-page-node-id="NMCBtrC4jET8d7TRjfQ19f">风险清单</h3>
+  <div class="grid g2" data-page-node-id="LT9oHvMARO1LTL2s76Ct8J">
+    <div data-page-node-id="3hbkzMRtxApIJxUmYd5VFt">
+      <div class="kv" data-page-node-id="BCj9BThA14UKHlYcGnbg2O"><span class="k" data-page-node-id="Tq7HoI3R05zJmrPh1CF1es">股权质押</span><span class="v risk-mid" data-page-node-id="zggBUgQQKEvFW1dNIkHug5">未解押占总股本 3.41%（按当前总股本），关注控制权稳定性与减持对流动性的冲击</span></div><div class="kv" data-page-node-id="BCj9BThA14UKHlYcGnbg2O"><span class="k" data-page-node-id="Tq7HoI3R05zJmrPh1CF1es">现金流背离</span><span class="v risk-mid" data-page-node-id="zggBUgQQKEvFW1dNIkHug5">经营现金流仅为净利润的 34.1%，利润现金含量偏低，关注应收与存货资金占用</span></div><div class="kv" data-page-node-id="BCj9BThA14UKHlYcGnbg2O"><span class="k" data-page-node-id="Tq7HoI3R05zJmrPh1CF1es">存货跌价</span><span class="v risk-mid" data-page-node-id="zggBUgQQKEvFW1dNIkHug5">存货周转天数 61 天，电子元器件价格下行时存在跌价风险</span></div><div class="kv" data-page-node-id="BCj9BThA14UKHlYcGnbg2O"><span class="k" data-page-node-id="Tq7HoI3R05zJmrPh1CF1es">杠杆资金集中</span><span class="v risk-mid" data-page-node-id="zggBUgQQKEvFW1dNIkHug5">融资余额占流通市值 9.45%，两融资金情绪波动放大股价弹性</span></div><div class="kv" data-page-node-id="BCj9BThA14UKHlYcGnbg2O"><span class="k" data-page-node-id="Tq7HoI3R05zJmrPh1CF1es">行业周期波动</span><span class="v risk-mid" data-page-node-id="zggBUgQQKEvFW1dNIkHug5">电子元器件分销受半导体景气度与下游需求周期影响，量价波动大（行业属性）</span></div>
+    </div>
+    <div data-page-node-id="z4vt0VASM0oWGPP3eZbZis">
+      <div class="kv" data-page-node-id="2CGXYt5kTzNJ9SMhHubOVt"><span class="k" data-page-node-id="ZAKZrj1nGnWnsoXmTJ9BU0">汇率波动</span><span class="v risk-mid" data-page-node-id="x7cql8Iwx5O4YfC31R07mO">代理海外原厂产品，采购与结算受人民币汇率波动影响（行业属性）</span></div><div class="kv" data-page-node-id="2CGXYt5kTzNJ9SMhHubOVt"><span class="k" data-page-node-id="ZAKZrj1nGnWnsoXmTJ9BU0">并购整合</span><span class="v risk-low" data-page-node-id="x7cql8Iwx5O4YfC31R07mO">历史上通过外延并购扩张（公开披露），存在整合与管理协同风险（行业属性）</span></div><div class="kv" data-page-node-id="2CGXYt5kTzNJ9SMhHubOVt"><span class="k" data-page-node-id="ZAKZrj1nGnWnsoXmTJ9BU0">贸易与政策</span><span class="v risk-low" data-page-node-id="x7cql8Iwx5O4YfC31R07mO">进口替代与出口管制政策、关税变动可能影响代理线供给与成本（行业属性）</span></div>
+    </div>
+  </div>
+  <p style="margin-top:12px" data-page-node-id="FBqMdHQWh8FHn7DlwpDdHq"><strong data-page-node-id="YiRDFJ6HgOAL3PILSCzafK">三条最值得单独强调的：</strong></p>
+  <ul data-page-node-id="3NPTQPUSZwRhEyfwx95aFF">
+    <li>股权质押</li><li>现金流背离</li><li>存货跌价</li>
+  </ul>
+</div>
+
+<footer data-page-node-id="hhViR3DwhpMGSHQZwSgwlI">
+  <strong data-page-node-id="VhoojV6JXjwfumHGkkilaK">数据来源</strong>：东方财富（主营业务构成、前十大股东、股权质押明细、财务分析指标）；巨潮资讯 cninfo（公司基本资料、主营业务与经营范围）；申万指数（行业分类）；Sina 财经（利润表 / 资产负债表 / 现金流量表）。财务数据截至最新报告期，持股比例与质押占比均按当前总股本折算。<br data-page-node-id="Ipwb8nUxxpjxfXxv9VljIU">
+  <strong data-page-node-id="j5ikKRwGyzV0UpfiICPAPA">口径说明</strong>：财务数据均为合并报表口径；最新报告期 2026-06-30；总股本 11.49 亿股（当前口径）。毛利率为自算口径 (营业总收入−营业成本)/营业总收入——东方财富「销售毛利率(%)」列在半年报期对全行业返回空值，故不采用。<br data-page-node-id="ZPBA1STDVqwzgTAkZvBNqZ">
+  <strong data-page-node-id="GLBMrbg0M1JNhG6AEaDMkx">来源分级</strong>：一手来源——公司年报／半年报／公告、交易所披露、东方财富与 Sina 财经的结构化数据；本报告中的持股比例、股权质押、主营构成、同业对比、财务速写等指标均由系统<strong>代码直接计算</strong>，未经模型改写，可直接采信。其中「上下游 / 前十大股东 / 深度合作 / 分红回购」等由系统用 PyMuPDF 解析公司定期报告原文抽取（最新半年报优先），并在对应小节标注「一手来源·《年报》」与页码，可直接溯源。非一手来源——增长空间、各类叙述性分析由 AI 基于公开信息生成，已在对应小节标注「非一手来源·待核实」，请以其原始披露为准。<br data-page-node-id="5xLMJ2t2HWOIIWfPbfDbHl">
+  <strong data-page-node-id="RJ5w2gC5sIZXUVNPzOdhfu">检索方式说明</strong>：本报告财务数据来自公开披露与公司公告；行情与融资融券数据来自东方财富延时行情接口（push2delay / datacenter），存在延迟，非实时价，仅供研究参考。
+  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)" data-page-node-id="AQt7NQNaCp9NEDxqdc1TVZ">
+    <strong data-page-node-id="BmJ2dgSsVque2uD7JWuAQl">免责声明</strong>：以上内容基于公开数据和量化分析，仅供参考，不构成投资建议。市场有风险，投资需谨慎。任何投资决策应结合个人风险承受能力、资金状况和投资目标独立判断，必要时咨询持牌专业机构。过往表现不预示未来收益。
+  </div>
+</footer>
+
+</div>
+
+<script>
+const F={family:'-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif'};
+Chart.defaults.font.family=F.family;
+Chart.defaults.font.size=12;
+Chart.defaults.color='#4a5464';
+const GRID='#eceff3';
+
+
+new Chart(document.getElementById('cTrend'),{
+  data:{
+    labels:["2023\u5e74\u62a5", "2024\u5e74\u62a5", "2025\u5e74\u62a5", "2026H1"],
+    datasets:[
+      {type:'bar',label:'营业收入（亿元）',data:[59.44, 78.21, 88.67, 64.32],
+       backgroundColor:'#b5d4f4',borderColor:'#185fa5',borderWidth:1,borderRadius:4,yAxisID:'y',order:2},
+      {type:'line',label:'归母净利润（亿元）',data:[0.66, 0.98, 1.72, 2.98],
+       borderColor:'#d92d20',backgroundColor:'#d92d20',borderWidth:2.5,
+       pointRadius:4,pointBackgroundColor:'#fff',pointBorderWidth:2,tension:.25,yAxisID:'y1',order:1}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top',labels:{boxWidth:12,boxHeight:12,padding:14,usePointStyle:true,pointStyle:'circle'}},
+      tooltip:{callbacks:{label:c=>c.dataset.label+'：'+c.parsed.y.toFixed(2)+' 亿元'}}},
+    scales:{
+      y:{position:'left',beginAtZero:true,grid:{color:GRID},title:{display:true,text:'营业收入（亿元）',font:{size:11}},ticks:{callback:v=>v+'亿'}},
+      y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},title:{display:true,text:'归母净利润（亿元）',font:{size:11}},ticks:{callback:v=>v+'亿'}},
+      x:{grid:{display:false}}
+    }}
+});
+
+
+
+new Chart(document.getElementById('cMix'),{
+  type:'bar',
+    data:{labels:["\u7535\u5b50\u5143\u5668\u4ef6", "\u7ed3\u6784\u6a21\u5757\u5668(\u6a21\u7ec4)", "\u7535\u529b\u4ea7\u54c1\u3001\u81ea\u7814\u82af\u7247\u7b49\u5176\u4ed6\u4e1a\u52a1"],
+    datasets:[{label:'收入（亿元）',data:[92.3, 3.92, 3.78],
+      backgroundColor:['#185fa5','#85b7eb','#fac775'],borderRadius:4,barThickness:38}]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>'收入 '+c.parsed.x.toFixed(2)+' 亿元 · 占比 '+(c.parsed.x/64.32*100).toFixed(2)+'%'}}},
+    scales:{x:{beginAtZero:true,grid:{color:GRID},title:{display:true,text:'营业收入（亿元）',font:{size:11}},ticks:{callback:v=>v+'亿'}},
+      y:{grid:{display:false}}}}
+});
+
+
+
+new Chart(document.getElementById('cGap'),{
+  type:'bar',
+  data:{
+    labels:["\u7535\u5b50\u5143\u5668\u4ef6", "\u7ed3\u6784\u6a21\u5757\u5668(\u6a21\u7ec4)", "\u7535\u529b\u4ea7\u54c1\u3001\u81ea\u7814\u82af\u7247\u7b49\u5176\u4ed6\u4e1a\u52a1"],
+    datasets:[
+      {label:'收入占比（%）',data:[92.3, 3.92, 3.78],backgroundColor:'#b5d4f4',borderColor:'#185fa5',borderWidth:1,borderRadius:4},
+      {label:'利润占比（%）',data:[88.69, 2.58, 8.72],backgroundColor:'#f0997b',borderColor:'#d85a30',borderWidth:1,borderRadius:4}
+    ]
+  },
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top',labels:{boxWidth:12,boxHeight:12,padding:14,usePointStyle:true,pointStyle:'circle'}},
+      tooltip:{callbacks:{label:c=>c.dataset.label+'：'+c.parsed.x.toFixed(2)+'%'}}},
+    scales:{x:{beginAtZero:true,suggestedMax:100,grid:{color:GRID},title:{display:true,text:'占营业收入 / 主营利润比重（%）',font:{size:11}},ticks:{callback:v=>v+'%'}},
+      y:{grid:{display:false}}}}
+});
+
+
+
+new Chart(document.getElementById('cSelfDev'),{
+  data:{
+    labels:["2023", "2024", "2025", "2026H1"],
+    datasets:[
+      {type:'bar',label:'收入（亿元）',data:[3.01, 4.27, 5.01, 2.43],
+       backgroundColor:'#b5d4f4',borderColor:'#185fa5',borderWidth:1,borderRadius:4,yAxisID:'y',order:2},
+      {type:'line',label:'毛利率（%）',data:[12.45, 21.79, 25.31, 23.9],
+       borderColor:'#d92d20',backgroundColor:'#d92d20',borderWidth:2.5,
+       pointRadius:4,pointBackgroundColor:'#fff',pointBorderWidth:2,tension:.25,yAxisID:'y1',order:1,spanGaps:true}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top',labels:{boxWidth:12,boxHeight:12,padding:14,usePointStyle:true,pointStyle:'circle'}},
+      tooltip:{callbacks:{label:function(c){
+        if(c.datasetIndex===1) return c.dataset.label+'：'+c.parsed.y.toFixed(2)+'%';
+        return c.dataset.label+'：'+c.parsed.y.toFixed(3)+' 亿元';}}}},
+    scales:{
+      y:{position:'left',beginAtZero:true,grid:{color:GRID},title:{display:true,text:'收入（亿元）',font:{size:11}},ticks:{callback:v=>v+'亿'}},
+      y1:{position:'right',suggestedMin:0,grid:{drawOnChartArea:false},title:{display:true,text:'毛利率（%）',font:{size:11}},ticks:{callback:v=>v+'%'}},
+      x:{grid:{display:false}}
+    }}
+});
+
+
+
+const PM_LABELS=["\u5546\u7edc\u7535\u5b50", "\u96c5\u521b\u7535\u5b50", "\u9999\u519c\u82af\u521b", "\u529b\u6e90\u4fe1\u606f", "\u6da6\u6b23\u79d1\u6280", "\u6df1\u5733\u534e\u5f3a", "\u82f1\u5510\u667a\u63a7", "\u597d\u4e0a\u597d", "\u4e2d\u7535\u6e2f"];
+const PM_HL=3;
+new Chart(document.getElementById('cPeer'),{
+  type:'bar',
+  data:{labels:PM_LABELS,
+    datasets:[{label:'毛利率（%）',
+      data:[15.21, 12.3, 11.61, 10.35, 9.58, 7.71, 7.7, 5.28, 2.85],
+      backgroundColor:PM_LABELS.map((_,i)=> i===PM_HL?'#185fa5':'#d3d1c7'),
+      borderRadius:4,barThickness:26}]},
+  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>'毛利率 '+c.parsed.x.toFixed(2)+'%'}}},
+    scales:{x:{beginAtZero:true,grid:{color:GRID},ticks:{callback:v=>v+'%'}},
+      y:{grid:{display:false}}}}
+});
+
+
+
+new Chart(document.getElementById('cCash'),{
+  data:{
+    labels:["2023\u5e74\u62a5", "2024\u5e74\u62a5", "2025\u5e74\u62a5", "2026H1"],
+    datasets:[
+      {type:'bar',label:'归母净利润（亿元）',data:[0.66, 0.98, 1.72, 2.98],
+       backgroundColor:'#f0997b',borderColor:'#d85a30',borderWidth:1,borderRadius:4,order:2},
+      {type:'bar',label:'经营活动现金流净额（亿元）',data:[0.54, -0.02, -0.91, 1.01],
+       backgroundColor:'#9fe1cb',borderColor:'#1d9e75',borderWidth:1,borderRadius:4,order:1}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top',labels:{boxWidth:12,boxHeight:12,padding:14,usePointStyle:true,pointStyle:'circle'}},
+      tooltip:{callbacks:{label:c=>c.dataset.label+'：'+c.parsed.y.toFixed(2)+' 亿元'}}},
+    scales:{y:{beginAtZero:true,grid:{color:GRID},title:{display:true,text:'金额（亿元）',font:{size:11}},ticks:{callback:v=>v+'亿'}},
+      x:{grid:{display:false}}}}
+});
+
+</script>
+</body>
+</html>
