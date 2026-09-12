@@ -27,13 +27,14 @@ llm:
   # （实测偶发 >9min）；如需更短可下调。各 provider 可用 request_timeout 单独覆盖。
   request_timeout: 600
   # 概况报告 JSON 大调用的 max_tokens（overview.py generate_overview_content）。
-  # 默认 8000；实测 qwen MaaS ≥6000 时返回误导性「402 余额不足」，降至 4000 可用。
-  overview_max_tokens: 4000
+  # 完整契约 JSON 常达 3000~6000 token，过低会在输出中途截断致解析失败。
+  # 2026-09-12 实测 qwen 8000 可用（此前 402 为余额问题，充值后消失）。
+  overview_max_tokens: 8000
   fallback_text: "（AI 结论生成失败：所有模型提供商均不可用，已跳过；报告其余部分不受影响）"
   providers:
     - name: qwen
       base_url: https://ws-196pnbqk3k32dz2m.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-      model: tongyi-xiaomi-analysis-flash
+      model: qwen3.5-27b
       api_key_env: QWEN_API_KEY        # 密钥已移入 .env；主用厂商，排首位免 DeepSeek 限流等待
       request_timeout: 600             # 推理模型：长首字延迟，给足超时避免每次重试都超时
     - name: deepseek
@@ -55,6 +56,10 @@ llm:
 # mode: contract=现状实现（LLM 出 JSON 契约 + 模板渲染）；direct=writer 直写 HTML（Step 3 接入）
 overview_writer:
   mode: contract
+  js_check:
+    enabled: true            # 渲染后 JS 语法校验（node --check，M4）；node 缺失自动跳过不阻断
+    node_path: ""            # 留空从 PATH 查找；也可指定 node 可执行文件绝对路径
+    timeout: 30              # 单块校验超时（秒）
   search:
     enabled: true            # search_agent 开关（false 时等价现状，零影响）
     news_limit: 20           # 检索条目上限（新闻 + web 合计）

@@ -746,6 +746,50 @@ def run_pipeline(
                     logger.warning("[main] generate_overview_content 异常，降级空壳：%s", e)
             ov_data = build_overview_data(result, profile_dict, llm_json, use_llm=use_llm)
             written = render_overview(ov_data, template_dir=template_dir, out_path=out_path)
+            # Step 3（WorkBuddy 复刻 M4）：渲染后 JS 语法校验闭环（node --check）。
+            # 校验失败不阻断产物：contract 模式模板 JS 静态可信，此闭环主要为
+            # writer 直写模式（M3）兜底；失败详情留日志，未来据以回传重试。
+            if written:
+                try:
+                    from fundamental_agent.agents.validate_html import check_html_js
+
+                    _js_cfg: dict = {}
+                    try:
+                        import yaml as _yaml
+
+                        _cfg_path = Path(__file__).resolve().parents[2] / "config.yaml"
+                        with open(_cfg_path, encoding="utf-8") as _f:
+                            _js_cfg = (
+                                (_yaml.safe_load(_f) or {}).get("overview_writer") or {}
+                            ).get("js_check") or {}
+                    except Exception:  # noqa: BLE001 — 配置缺失按默认开
+                        pass
+                    if _js_cfg.get("enabled", True):
+                        _html = Path(written).read_text(encoding="utf-8")
+                        _res = check_html_js(
+                            _html,
+                            node_path=_js_cfg.get("node_path") or None,
+                            timeout=int(_js_cfg.get("timeout") or 30),
+                        )
+                        if _res["status"] == "passed":
+                            print(
+                                f"[js_check] PASS：{_res['blocks']} 个内联脚本块语法校验通过"
+                            )
+                        elif _res["status"] == "skipped":
+                            logger.warning(
+                                "[js_check] SKIP：%s（%d 块未校验）",
+                                _res.get("reason"),
+                                _res["blocks"],
+                            )
+                        else:
+                            for _e in _res["errors"]:
+                                logger.warning(
+                                    "[js_check] FAIL block %s：%s",
+                                    _e["block"],
+                                    _e["message"],
+                                )
+                except Exception as e:  # noqa: BLE001 — 校验器自身异常绝不阻断报告
+                    logger.warning("[main] js_check 异常，跳过：%s", e)
         else:
             # 公司基本面报告：沿用既有 render() + template.html；LLM 润色的解读在 build_data 内覆盖
             # （行业对比报告在函数前部已旁路返回，此处不再处理）
