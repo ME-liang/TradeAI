@@ -26,6 +26,9 @@ llm:
   # 单轮 LLM 请求超时上限（秒）。默认 600s 覆盖 deepseek-r1 等推理模型的长首字延迟
   # （实测偶发 >9min）；如需更短可下调。各 provider 可用 request_timeout 单独覆盖。
   request_timeout: 600
+  # 概况报告 JSON 大调用的 max_tokens（overview.py generate_overview_content）。
+  # 默认 8000；实测 qwen MaaS ≥6000 时返回误导性「402 余额不足」，降至 4000 可用。
+  overview_max_tokens: 4000
   fallback_text: "（AI 结论生成失败：所有模型提供商均不可用，已跳过；报告其余部分不受影响）"
   providers:
     - name: qwen
@@ -47,4 +50,17 @@ llm:
   # 向后兼容：若上方 providers 缺失，则沿用下方单厂商配置 + 环境变量 DEEPSEEK_BASE_URL
   # provider: deepseek
   # model: deepseek-v4-flash
+
+# 概况报告 writer 改造（WorkBuddy 复刻方案，docs/WorkBuddy复刻改造方案.md）：
+# mode: contract=现状实现（LLM 出 JSON 契约 + 模板渲染）；direct=writer 直写 HTML（Step 3 接入）
+overview_writer:
+  mode: contract
+  search:
+    enabled: true            # search_agent 开关（false 时等价现状，零影响）
+    news_limit: 20           # 检索条目上限（新闻 + web 合计）
+    web_provider: tavily     # 可选 web 检索后端：tavily / none（仅用个股新闻）
+    web_api_key_env: SEARCH_API_KEY   # 未配置密钥时 web 后端自动跳过
+    request_timeout: 30      # web 检询单次超时（秒）
+    synthesis_max_tokens: 1600  # 综合摘要 LLM 调用上限
+
 

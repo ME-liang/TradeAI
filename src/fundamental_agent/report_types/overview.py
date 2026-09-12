@@ -2557,6 +2557,21 @@ def _key_facts_brief(profile_dict: dict) -> str:
     return "\n".join(f"  - {x}" for x in lines)
 
 
+def _overview_max_tokens() -> int:
+    """概况 JSON 大调用的 max_tokens：config.yaml llm.overview_max_tokens 可覆盖（默认 8000）。
+
+    背景（Step 2 实测）：qwen MaaS 对单请求输出上限有限制，≥6000 时返回误导性
+    「402 余额不足」——此前 8000 硬编码导致概况 LLM 生成在 qwen 上**必然静默失败**，
+    整份报告无声降级为数据层兜底。可在 config 中下调至该端点可用值。
+    """
+    try:
+        from ..llm import load_llm_config
+
+        return int(load_llm_config().get("overview_max_tokens") or 8000)
+    except Exception:  # noqa: BLE001 — 配置缺失时回退默认
+        return 8000
+
+
 def generate_overview_content(result, profile_dict: dict, name: str, code: str, max_retries: int = 2) -> dict | None:
     """调用多厂商路由生成六层结构化概况内容；失败（含额度耗尽）返回 None。
 
@@ -2595,16 +2610,29 @@ def generate_overview_content(result, profile_dict: dict, name: str, code: str, 
     )
     last = None
     for attempt in range(max_retries):
+        # Step 2（WorkBuddy 复刻）：max_tokens 可由 config.yaml llm.overview_max_tokens
+        # 覆盖（默认仍 8000）。实测 qwen MaaS 端点对单请求 max_tokens 有限制
+        # （≤4000 正常，≥6000 返回误导性「402 余额不足」），大调用静默失败会让
+        # 整份报告无声降级为数据层兜底——故失败必须留日志（见下方两处 warning）。
+        _mt = _overview_max_tokens()
         try:
-            # max_tokens 放宽至 8000：概况报告契约含 ~40 字段且带叙事 HTML，完整 JSON 常达
-            # 3000~6000 token；默认 2000 会在输出中途截断导致 JSON 解析失败、整份报告降级空壳。
             resp = get_router().complete(
-                LLMRequest(system=system, user=user, max_tokens=8000)
-            ).text
-        except Exception:
+                LLMRequest(system=system, user=user, max_tokens=_mt)
+            )
+        except Exception as e:
+            logger.warning("[overview] 第 %d 次 LLM 调用异常：%s", attempt + 1, e)
             return None
-        parsed = _parse_overview_json(resp)
+        if not getattr(resp, "ok", True):
+            logger.warning(
+                "[overview] 第 %d 次 LLM 调用失败：provider=%s error=%s（max_tokens=%s）",
+                attempt + 1, resp.provider, (resp.error or "")[:120], _mt,
+            )
+        parsed = _parse_overview_json(resp.text)
         if not parsed:
+            logger.warning(
+                "[overview] 第 %d 次输出 JSON 解析失败（text_len=%s，可能截断或为降级文案），重试/降级",
+                attempt + 1, len(resp.text or ""),
+            )
             continue
         last = parsed
         # 接受条件（P3-1 通用护栏）：占位符无泄漏 + list/html 字段合法 + conclusion 通过

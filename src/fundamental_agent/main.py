@@ -711,18 +711,39 @@ def run_pipeline(
                 result.llm_summary = _f_sum.result()
                 result.llm_insights = _f_pol.result()
 
+    search_used = False
     written: str | None = None
     if out_path:
         _emit("渲染报告", 92)
         template_dir = str(Path(__file__).resolve().parent / "report")
         if report_type == "overview":
             # 公司概况报告：独立模板 + LLM 生成内容（B①）；失败降级空壳，不污染基本面
+            # Step 2（WorkBuddy 复刻 M2）：检索代理补充定性层（合作关系/行业格局/近期动态）。
+            # 摘要注入 dynamics.research 后随 profile_dict 一并进入 LLM 输入（见 overview.md
+            # 第 9 条使用规则）；任何失败降级为无检索，pipeline 不中断，等价现状。
+            if use_llm:
+                try:
+                    from fundamental_agent.agents.search_agent import run_search_agent
+
+                    research = run_search_agent(result.name, entity.code)
+                    if research:
+                        profile_dict.setdefault("layers", {}).setdefault(
+                            "dynamics", {}
+                        )["research"] = research
+                        search_used = True
+                        print(
+                            f"[search_agent] 已注入检索摘要：后端={'+'.join(research['backends'])}，"
+                            f"条目={research['sources_count']}，"
+                            f"综合={'成功' if research['synthesis_ok'] else '失败（条目仍注入）'}"
+                        )
+                except Exception as e:  # noqa: BLE001 — 检索代理异常绝不阻断报告
+                    logger.warning("[main] search_agent 失败，按无检索继续：%s", e)
             llm_json = None
             if use_llm:
                 try:
                     llm_json = generate_overview_content(result, profile_dict, result.name, entity.code)
-                except Exception:
-                    llm_json = None
+                except Exception as e:  # noqa: BLE001 — 失败降级空壳，但必须留痕（曾静默失败难排查）
+                    logger.warning("[main] generate_overview_content 异常，降级空壳：%s", e)
             ov_data = build_overview_data(result, profile_dict, llm_json, use_llm=use_llm)
             written = render_overview(ov_data, template_dir=template_dir, out_path=out_path)
         else:
@@ -742,6 +763,7 @@ def run_pipeline(
             "suspicious_llm_numbers": validation["suspicious_llm_numbers"],
         },
         "profile_json": profile_dict,
+        "search_used": search_used,
     }
 
 
