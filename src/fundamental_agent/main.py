@@ -712,6 +712,7 @@ def run_pipeline(
                 result.llm_insights = _f_pol.result()
 
     search_used = False
+    writer_mode = ""  # overview 报告的成稿模式：contract / direct（Step 4 溯源字段）
     written: str | None = None
     if out_path:
         _emit("渲染报告", 92)
@@ -738,14 +739,48 @@ def run_pipeline(
                         )
                 except Exception as e:  # noqa: BLE001 — 检索代理异常绝不阻断报告
                     logger.warning("[main] search_agent 失败，按无检索继续：%s", e)
-            llm_json = None
-            if use_llm:
+            # Step 4（WorkBuddy 复刻）：mode 路由——
+            #   direct：writer_agent 直写完整 HTML（M3，四段式 prompt + 校验重试闭环）；
+            #   contract：LLM 出 JSON 契约 + 模板渲染（现状）。
+            # direct 任何失败降级 contract，绝不产空壳；两模式产物以 meta.writer_mode 区分。
+            writer_mode = "contract"
+            try:
+                import yaml as _ym
+
+                _cfg_p = Path(__file__).resolve().parents[2] / "config.yaml"
+                with open(_cfg_p, encoding="utf-8") as _f:
+                    writer_mode = str(
+                        ((_ym.safe_load(_f) or {}).get("overview_writer") or {}).get("mode")
+                        or "contract"
+                    )
+            except Exception:  # noqa: BLE001 — 配置缺失按 contract
+                pass
+            direct_html = None
+            if use_llm and writer_mode == "direct":
                 try:
-                    llm_json = generate_overview_content(result, profile_dict, result.name, entity.code)
-                except Exception as e:  # noqa: BLE001 — 失败降级空壳，但必须留痕（曾静默失败难排查）
-                    logger.warning("[main] generate_overview_content 异常，降级空壳：%s", e)
-            ov_data = build_overview_data(result, profile_dict, llm_json, use_llm=use_llm)
-            written = render_overview(ov_data, template_dir=template_dir, out_path=out_path)
+                    from fundamental_agent.agents.writer_agent import generate_overview_html
+
+                    _w = generate_overview_html(result, profile_dict, result.name, entity.code)
+                    if _w and _w.get("html"):
+                        direct_html = _w["html"]
+                        print(f"[writer_agent] 直写成功：第 {_w['attempts']} 次通过全部校验")
+                    else:
+                        _errs = (_w or {}).get("last_errors") or ["未知原因"]
+                        print(f"[writer_agent] 直写失败，降级 contract：{str(_errs[0])[:120]}")
+                except Exception as e:  # noqa: BLE001 — writer 异常绝不阻断报告
+                    logger.warning("[main] writer_agent 异常，降级 contract：%s", e)
+            if direct_html:
+                Path(out_path).write_text(direct_html, encoding="utf-8")
+                written = str(out_path)
+            else:
+                llm_json = None
+                if use_llm:
+                    try:
+                        llm_json = generate_overview_content(result, profile_dict, result.name, entity.code)
+                    except Exception as e:  # noqa: BLE001 — 失败降级空壳，但必须留痕（曾静默失败难排查）
+                        logger.warning("[main] generate_overview_content 异常，降级空壳：%s", e)
+                ov_data = build_overview_data(result, profile_dict, llm_json, use_llm=use_llm)
+                written = render_overview(ov_data, template_dir=template_dir, out_path=out_path)
             # Step 3（WorkBuddy 复刻 M4）：渲染后 JS 语法校验闭环（node --check）。
             # 校验失败不阻断产物：contract 模式模板 JS 静态可信，此闭环主要为
             # writer 直写模式（M3）兜底；失败详情留日志，未来据以回传重试。
@@ -808,6 +843,7 @@ def run_pipeline(
         },
         "profile_json": profile_dict,
         "search_used": search_used,
+        "writer_mode": writer_mode,
     }
 
 

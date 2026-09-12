@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 import threading
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -23,6 +24,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from .schemas import ReportRequest, TaskStatus
 from .tasks import TaskManager
 from fundamental_agent.main import run_pipeline
+
+# 项目根（src/fundamental_agent/api/server.py → 上溯 3 级）；config.yaml 的读取基准
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 from fundamental_agent.storage import report_output_path, save_report
 from fundamental_agent.auth import service as auth_service
 from fundamental_agent.auth.db import REMEMBER_TTL_DAYS, SESSION_TTL_DAYS
@@ -83,6 +87,18 @@ def _reuse_today(code: str, report_type: str, bk: str = "") -> str | None:
             return None
         if report_type == "industry" and str(meta.get("bk") or "") != str(bk or ""):
             return None
+        # Step 4：overview 产物按成稿模式（contract/direct）区分复用，切模式不误命中旧产物
+        if report_type == "overview":
+            try:
+                with open(_PROJECT_ROOT / "config.yaml", encoding="utf-8") as f:
+                    cur_mode = str(
+                        ((yaml.safe_load(f) or {}).get("overview_writer") or {}).get("mode")
+                        or "contract"
+                    )
+            except Exception:  # noqa: BLE001 — 读不到配置按 contract
+                cur_mode = "contract"
+            if str(meta.get("writer_mode") or "contract") != cur_mode:
+                return None
         return str(html)
     except Exception:  # noqa: BLE001 — 复用判定失败只意味着多跑一次生成
         return None
@@ -140,6 +156,8 @@ def _worker(task_id: str, code: str, use_llm: bool, report_type: str = "fundamen
             "name": info.get("name", ""),
             "report_type": report_type,
             "bk": bk,  # industry 报告落盘绑定对比基准板块，供措施4「当日产物复用」按 bk 精确匹配
+            "writer_mode": str(info.get("writer_mode") or ""),  # Step 4：contract/direct 溯源
+            "search_used": bool(info.get("search_used")),  # Step 2：检索摘要是否注入
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "data_source": "akshare",
             "validation": info.get("validation", {}),

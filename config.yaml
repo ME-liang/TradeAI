@@ -56,6 +56,9 @@ llm:
 # mode: contract=现状实现（LLM 出 JSON 契约 + 模板渲染）；direct=writer 直写 HTML（Step 3 接入）
 overview_writer:
   mode: contract
+  writer:
+    max_tokens: 16000        # writer 直写完整 HTML 的输出上限（direct 模式）
+    retries: 2               # 校验驳回后的重试次数（报错原文回传）
   js_check:
     enabled: true            # 渲染后 JS 语法校验（node --check，M4）；node 缺失自动跳过不阻断
     node_path: ""            # 留空从 PATH 查找；也可指定 node 可执行文件绝对路径
