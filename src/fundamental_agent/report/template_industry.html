@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ target_name }}（{{ target_code }}）行业对比报告 · {{ industry }}</title>
+<style>
+  :root{
+    --ink:#1b2330; --ink2:#4a5464; --ink3:#7b8494;
+    --line:#e4e7ec; --bg:#f6f7f9; --card:#ffffff;
+    --brand:#185fa5; --brand-soft:#e6f1fb;
+    --up:#d92d20; --down:#0f7b4f; --warn:#b54708; --warn-soft:#fef0e6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.65; font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 64px}
+
+  header{margin-bottom:24px}
+  .eyebrow{font-size:12px;letter-spacing:.08em;color:var(--brand);font-weight:500;margin-bottom:8px}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+  .sub{color:var(--ink3);font-size:13px;margin-top:8px}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .badge{font-size:12px;padding:3px 9px;border-radius:5px;background:var(--brand-soft);color:var(--brand)}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
+  h2{font-size:17px;font-weight:600;display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+  h2 .num{font-size:12px;color:var(--brand);font-weight:500;font-variant-numeric:tabular-nums}
+  .lead{color:var(--ink3);font-size:13px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  p{margin-bottom:10px;color:var(--ink2)}
+  strong{color:var(--ink);font-weight:600}
+
+  /* 公司名单带 */
+  .strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .co{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 12px;border-radius:999px;
+      background:var(--card);border:1px solid var(--line);color:var(--ink2)}
+  .co .rank{font-size:10.5px;color:var(--ink3)}
+  .co.target{background:var(--brand-soft);border-color:#c8ddf2;color:var(--brand);font-weight:600}
+  .co.target .rank{color:var(--brand)}
+
+  /* 定量速览大表: 指标行 x 公司列 */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--ink3);font-weight:500;font-size:12px;background:var(--bg)}
+  td{font-variant-numeric:tabular-nums}
+  tbody tr:last-child td{border-bottom:none}
+  td.hl-col,th.hl-col{background:#f0f6fc;color:var(--brand);font-weight:600}
+  th.co-col{max-width:120px}
+  .tag-t{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--brand);color:#fff;margin-left:6px;vertical-align:middle}
+
+  /* 维度并列对比卡 */
+  .dim{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+  .co-card{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .co-card.target{background:linear-gradient(180deg,#f0f6fc,#ffffff);border:1px solid #c8ddf2}
+  .co-card .co-name{font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .co-card .co-name .badge-t{font-size:10.5px;padding:1px 7px;border-radius:4px;background:var(--brand);color:#fff;font-weight:500}
+  .co-card .co-name .badge-e{font-size:10.5px;padding:1px 7px;border-radius:4px;background:#e7f5ee;color:var(--down);border:1px solid #b6e0cb;font-weight:500}
+  .co-card p{font-size:13px;color:var(--ink2);margin-bottom:0}
+  .co-card .edge{margin-top:8px;font-size:12.5px;color:var(--brand);background:var(--brand-soft);border-radius:6px;padding:6px 10px}
+
+  /* 优势劣势双栏 */
+  .swot{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+  .swot .co-card{display:flex;flex-direction:column;gap:8px}
+  .sw-line{font-size:13px;color:var(--ink2)}
+  .sw-line b{display:inline-block;font-size:11px;padding:1px 7px;border-radius:4px;margin-right:6px;font-weight:600;vertical-align:middle}
+  .sw-line b.adv{background:#e7f5ee;color:var(--down)}
+  .sw-line b.dis{background:var(--warn-soft);color:var(--warn)}
+
+  .concl{background:linear-gradient(180deg,#f0f6fc,#ffffff);border:1px solid #c8ddf2;border-left:3px solid var(--brand)}
+  .concl p{font-size:14.5px;line-height:1.8;color:var(--ink);margin:0}
+
+  .note{font-size:12px;color:var(--ink3);margin-top:8px}
+  .llm-warn{border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--ink2)}
+  footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--ink3);line-height:1.8}
+
+  @media(max-width:640px){
+    .wrap{padding:20px 14px 48px}
+    h1{font-size:21px}
+    .card{padding:16px 14px}
+    .dim,.swot{grid-template-columns:1fr}
+    table{font-size:12px;min-width:560px}
+    th,td{padding:7px 6px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">行业对比分析 · INDUSTRY BENCHMARK</div>
+  <h1>{{ target_name }}（{{ target_code }}）行业对比报告</h1>
+  <div class="sub">{{ industry }} &nbsp;|&nbsp; 报告日期：{{ report_date }} &nbsp;|&nbsp; 对比样本：{{ companies|length }} 家（同行业按总市值排序）</div>
+  <div class="badges">
+    <span class="badge">目标公司为主线</span>
+    <span class="badge">六维度并列对比</span>
+    <span class="badge">{{ 'AI 竞争分析已生成' if llm_ok else '定性维度未生成（LLM 不可用）' }}</span>
+  </div>
+</header>
+
+{% if not llm_ok %}
+<div class="llm-warn"><strong>说明：</strong>本次 AI 定性分析未能生成（LLM 服务不可用或输出未通过真实性校验）。为避免误导，定性维度展示降级说明而非编造内容；定量速览表为真实接口数据。</div>
+{% endif %}
+
+<div class="strip">
+  {% for c in companies %}
+  <span class="co{{ ' target' if c.is_target }}"><span class="rank">#{{ loop.index }}</span>{{ c.name }}{% if c.is_target %}（目标公司）{% endif %}</span>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2><span class="num">01</span>定量指标速览</h2>
+  <div class="lead">同行业市值前 {{ companies|length }} 家真实数据（行情快照 + 财务接口实时取数），目标公司列高亮。</div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>指标</th>
+          {% for c in companies %}<th class="co-col{{ ' hl-col' if c.is_target }}">{{ c.name }}{% if c.is_target %}<span class="tag-t">目标</span>{% endif %}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>总市值</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.mcap }}</td>{% endfor %}</tr>
+        <tr><td>市盈率</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.pe }}</td>{% endfor %}</tr>
+        <tr><td>市净率</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.pb }}</td>{% endfor %}</tr>
+        <tr><td>ROE（加权）</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.roe }}</td>{% endfor %}</tr>
+        <tr><td>毛利率</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.gross }}</td>{% endfor %}</tr>
+        <tr><td>营收同比</td>{% for c in companies %}<td class="{{ 'hl-col' if c.is_target }}">{{ c.rev }}</td>{% endfor %}</tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">毛利率/营收同比为最近报告期口径；银行等无毛利概念行业显示 0% 属正常；"—" 表示该数据源未提供。</div>
+</div>
+
+<div class="card">
+  <h2><span class="num">02</span>主营业务范围与市场定位</h2>
+  <div class="lead">逐家定位并标注样本内的共同点与差异点。</div>
+  <div class="dim">
+    {% for it in positioning %}
+    <div class="co-card{{ ' target' if it.is_target }}">
+      <div class="co-name">{{ it.name }}{% if it.is_target %}<span class="badge-t">目标公司</span>{% endif %}</div>
+      <p>{{ it.text }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="num">03</span>产品或服务差异化</h2>
+  <div class="lead">核心产品线对比与各细分占优方。</div>
+  <div class="dim">
+    {% for it in differentiation %}
+    <div class="co-card{{ ' target' if it.is_target }}">
+      <div class="co-name">{{ it.name }}{% if it.is_target %}<span class="badge-t">目标公司</span>{% endif %}</div>
+      <p>{{ it.text }}</p>
+      {% if it.edge %}<div class="edge">细分占优：{{ it.edge }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="num">04</span>目标客户群体</h2>
+  <div class="lead">客户结构与获客模式的横向比较。</div>
+  <div class="dim">
+    {% for it in customers %}
+    <div class="co-card{{ ' target' if it.is_target }}">
+      <div class="co-name">{{ it.name }}{% if it.is_target %}<span class="badge-t">目标公司</span>{% endif %}</div>
+      <p>{{ it.text }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="num">05</span>市场份额与竞争地位</h2>
+  <div class="lead">基于样本内市值排名与指标的相对位置陈述（非全市场市占率口径）。</div>
+  <div class="dim">
+    {% for it in market_position %}
+    <div class="co-card{{ ' target' if it.is_target }}">
+      <div class="co-name">{{ it.name }}{% if it.is_target %}<span class="badge-t">目标公司</span>{% endif %}</div>
+      <p>{{ it.text }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="num">06</span>核心优势与劣势</h2>
+  <div class="lead">逐家小结，结论可追溯到定量速览与各维度对比依据。</div>
+  <div class="swot">
+    {% for it in swot %}
+    <div class="co-card{{ ' target' if it.is_target }}">
+      <div class="co-name">{{ it.name }}{% if it.is_target %}<span class="badge-t">目标公司</span>{% endif %}</div>
+      <div class="sw-line"><b class="adv">优势</b>{{ it.advantage }}</div>
+      <div class="sw-line"><b class="dis">劣势</b>{{ it.disadvantage }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card concl">
+  <h2><span class="num">综合研判</span>以 {{ target_name }} 为主线的竞争格局</h2>
+  {{ summary_html|blockp }}
+</div>
+
+<footer>
+  数据来源：东方财富行情/财务接口、巨潮资讯公司简介（公开数据）；报告中引用的百分比、市值与排名均与「定量指标速览」一致。<br>
+  本报告由程序自动生成，仅供研究参考，不构成任何投资建议。生成日期：{{ report_date }}。
+</footer>
+
+</div>
+</body>
+</html>

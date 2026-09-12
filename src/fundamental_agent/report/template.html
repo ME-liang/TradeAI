@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ result.name or "公司" }} · 基本面分析报告</title>
+<style>
+  /* ===== 设计体系：与公司概况报告(template_overview.html)统一（2026-09-10） ===== */
+  :root{
+    --ink:#1b2330; --ink2:#4a5464; --ink3:#7b8494;
+    --line:#e4e7ec; --bg:#f6f7f9; --card:#ffffff;
+    --brand:#185fa5; --brand-soft:#e6f1fb;
+    --up:#d92d20; --down:#0f7b4f; --warn:#b54708; --warn-soft:#fef0e6;
+    /* 旧变量别名（指向新值，避免遗漏引用处断裂） */
+    --navy:#185fa5; --navy-deep:#185fa5; --slate:#4a5464; --gray:#7b8494;
+    --red:#d92d20; --green:#0f7b4f; --blue:#185fa5; --blue-light:#8fb8de;
+    --card-border:#e4e7ec; --card-bg:#ffffff; --white:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.65; font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1040px;margin:0 auto;padding:32px 20px 64px;}
+
+  /* ===== 页头（概况式：eyebrow + 大标题 + 灰色信息行） ===== */
+  .rp-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:24px;}
+  .eyebrow{font-size:12px;letter-spacing:.08em;color:var(--brand);font-weight:500;margin-bottom:8px}
+  .rp-header h1{font-size:27px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+  .rp-header .sub{color:var(--ink3);font-size:13px;margin-top:8px}
+  .btn-export{
+    flex-shrink:0;font-size:12px;padding:3px 9px;border-radius:5px;cursor:pointer;
+    background:var(--brand-soft);color:var(--brand);border:1px solid #cfe2f5;font-weight:500;
+    transition:background .15s;
+  }
+  .btn-export:hover{background:#d8e9f8;}
+
+  /* ===== 分节卡片（原整宽 band → 概况白卡） ===== */
+  .band{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+  .band.light,.band.white{background:var(--card);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+
+  /* ===== 分节标题（概况式：蓝色小号编号 + 17px/600 标题 + 灰色 lead 行） ===== */
+  .sec-head,.fin-header{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+  .fin-badge{background:none;color:var(--brand);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;
+    width:auto;height:auto;border-radius:0;font-size:12px;}
+  .fin-title h2,.sec-head h2{font-size:17px;font-weight:600;color:var(--ink);letter-spacing:normal;}
+  .fin-title p,.sec-head .en{color:var(--ink3);font-size:13px;margin:6px 0 0;padding-bottom:14px;border-bottom:1px solid var(--line);
+    text-transform:none;letter-spacing:normal;display:block;}
+  .fin-title p{color:var(--ink3);font-weight:normal;}
+  .fin-layout{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start;}
+
+  /* ===== Hero（仅保留 KPI 行，样式对齐概况 metric） ===== */
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px;}
+  .hero-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:0;}
+  .hero-kpi{background:var(--bg);border:none;border-radius:8px;padding:12px 14px;min-height:0;box-shadow:none;display:block;}
+  .hero-kpi .lab{font-size:12px;color:var(--ink3);margin-bottom:4px;}
+  .hero-kpi .val{font-size:21px;font-weight:600;color:var(--ink);line-height:1.2;margin-top:0;}
+  .hero-kpi .val small{font-size:13px;font-weight:500;color:var(--ink3);}
+  .hero-kpi .extra{margin-top:4px;font-size:11.5px;font-weight:600;}
+  .hero-kpi .extra::before{content:"▲";margin-right:3px;font-size:10px;}
+  .hero-kpi .extra.up{color:var(--up);}
+  .hero-kpi .extra.down{color:var(--down);}
+
+  /* ===== 指标卡族（盈利/成长/偿债/运营/对标）：概况 metric 风格 ===== */
+  .kpi-row,.prof-grid,.growth-grid,.solvency-grid,.efficiency-grid,.benchmark-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;}
+  .kpi-card,.prof-card,.growth-card,.solvency-card,.efficiency-card,.benchmark-card{
+    background:var(--bg);border:1px solid transparent;border-radius:8px;padding:12px 14px;box-shadow:none;text-align:left;}
+  .kpi-card .l,.prof-card .lab,.growth-card .lab,.solvency-card .lab,.efficiency-card .lab,.benchmark-card .lab{
+    font-size:12px;color:var(--ink3);margin-bottom:4px;}
+  .kpi-card .v,.prof-card .val,.growth-card .val,.solvency-card .val,.efficiency-card .val,.benchmark-card .val{
+    font-size:21px;font-weight:600;color:var(--ink);line-height:1.2;margin-bottom:4px;}
+  .kpi-card .v small,.prof-card .val small{font-size:13px;font-weight:500;color:var(--ink3);}
+  .kpi-card{text-align:left;}
+  .kpi-card .d{margin-top:2px;font-size:11.5px;font-weight:600;}
+  .kpi-card .d.up,.prof-card .delta,.growth-card .tag.red,.solvency-card .tag,.efficiency-card .tag,.benchmark-card .tag{color:var(--up);}
+  .kpi-card .d.down,.prof-card .delta.down,.growth-card .tag.down,.growth-card .tag.blue{color:var(--down);}
+  .prof-card .delta::before,.growth-card .tag.red::before{content:"▲";margin-right:3px;font-size:10px;}
+  .prof-card .delta.down::before{content:"▼";}
+  .growth-card .tag.blue::before{content:"▼";font-size:10px;}
+  /* 卡片即按钮：点击切换图表（交互保留，高亮改品牌色） */
+  .prof-card,.growth-card,.solvency-card,.efficiency-card{cursor:pointer;transition:box-shadow .12s ease,border-color .12s ease;}
+  .prof-card:hover,.growth-card:hover,.solvency-card:hover,.efficiency-card:hover{border-color:var(--brand);}
+  .prof-card.active,.growth-card.active,.solvency-card.active,.efficiency-card.active{
+    border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft);background:#fff;}
+  .prof-card.active .lab,.growth-card.active .lab,.solvency-card.active .lab,.efficiency-card.active .lab{color:var(--brand);}
+
+
+  /* ===== 图表（已逐条还原为原版样式与交互：悬停增亮/数值标签/结构布局，配色保留原版深蓝） ===== */
+  .svgchart{width:100%;height:auto;display:block;font-family:inherit;}
+  .svgchart .grid{stroke:#E8ECF2;stroke-width:1;}
+  .svgchart .axis{stroke:#C3CCD9;stroke-width:1.4;}
+  .svgchart .zeroline{stroke:#8893A6;stroke-width:1.4;stroke-dasharray:4 3;}
+  .svgchart .ytick{fill:#9AA3B2;font-size:12px;text-anchor:end;}
+  .svgchart .xlabel{fill:#5A6270;font-size:13.5px;text-anchor:middle;font-weight:600;}
+  .svgchart .vlabel{fill:#2B3550;font-size:14px;text-anchor:middle;font-weight:700;}
+  .svgchart .vlabel.vdeep{fill:#102B4A;}
+  .svgchart .bcol{transition:filter .15s, opacity .15s;cursor:default;}
+  .svgchart .bcol:hover{filter:brightness(1.07);}
+  .svgchart *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  .chart-area{margin-top:22px;}
+  .chart-card{padding:22px 24px;}
+  .chart-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  .chart-hd .ttl{font-size:15px;font-weight:800;color:#1B2330;}
+  .chart-hd .unit{font-size:12px;color:#8A93A6;}
+  .chart-wrap{position:relative;height:220px;}
+  .bar-group{display:flex;align-items:flex-end;justify-content:space-between;height:180px;padding:0 10px;border-bottom:1px solid #E2E6EC;}
+  .bar-group .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px;max-width:80px;}
+  .bar-group .bar{width:28px;background:#1A3D6B;border-radius:3px 3px 0 0;position:relative;}
+  .bar-group .bar.light{background:#8EB1DB;}
+  .bar-group .bar::after{content:attr(data-v);position:absolute;top:-18px;left:50%;transform:translateX(-50%); font-size:11px;color:#5A6270;white-space:nowrap;}
+  .bar-group .yr{font-size:12px;color:#8A93A6;margin-top:4px;}
+  .line-area{height:180px;position:relative;border-bottom:1px solid #E2E6EC;}
+  .line-area svg{width:100%;height:100%;}
+  .line-area polyline{fill:none;stroke:#1A3D6B;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;}
+  .line-area circle{fill:#fff;stroke:#1A3D6B;stroke-width:2;}
+  .structure-card{padding:22px;}
+  .structure-card h3{font-size:15px;font-weight:800;color:#1B2330;margin-bottom:22px;}
+  .bar-row{margin-bottom:22px;}
+  .bar-row .lbl{display:flex;justify-content:space-between;font-size:13px;color:#5A6270;margin-bottom:8px;}
+  .bar-row .lbl b{color:#1B2330;font-weight:700;}
+  .progress{height:10px;background:#EDF0F5;border-radius:5px;overflow:hidden;}
+  .progress .fill{height:100%;border-radius:5px;}
+  .progress .fill.navy{background:#1A3D6B;}
+  .progress .fill.blue{background:#8EB1DB;}
+  .prof-chart{margin-top:22px;}
+  .growth-chart{margin-top:22px;}
+  .solvency-chart{margin-top:22px;}
+  .efficiency-chart{margin-top:22px;}
+  .prof-chart .bar{width:34px;}
+  .growth-chart .bar{width:34px;}
+  .solvency-chart .bar{width:34px;}
+  .efficiency-chart .bar{width:34px;}
+
+  /* ===== 财务报表解析 ===== */
+  .fin-tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .fin-tab{padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;color:var(--ink2);
+    background:var(--bg);border:1px solid transparent;cursor:pointer;transition:.15s;}
+  .fin-tab.active{background:var(--brand);color:#fff;}
+  .fin-tab:hover:not(.active){color:var(--brand);}
+  .fin-controls{margin-bottom:12px;}
+  .fin-controls-label{font-size:12px;color:var(--ink3);}
+  .fin-select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font-size:13px;cursor:pointer;}
+  .fin-select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft);}
+  .fin-controls-hint{font-size:11.5px;color:var(--ink3);}
+  .fin-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:22px;}
+  .fin-panel{display:none;}
+  .fin-panel.active{display:block;}
+  .fin-table{width:100%;border-collapse:collapse;}
+  .fin-table tr.total td:first-child{color:var(--ink);}
+  .delta{font-size:12px;font-weight:700;}
+  .delta.up{color:var(--up);}
+  .delta.down{color:var(--down);}
+  .prof-card .delta{font-size:12px;font-weight:700;}
+  .fin-table-wrap{background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:none;}
+  .fin-table th,.fin-table td{padding:9px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);font-weight:normal;}
+  .fin-table th{background:var(--bg);color:var(--ink3);font-weight:500;font-size:12px;}
+  .fin-table td:first-child,.fin-table th:first-child{text-align:left;color:var(--ink);}
+  .fin-table td{font-variant-numeric:tabular-nums;}
+  .fin-table tr:last-child td{border-bottom:none;}
+  .fin-table tr.total{font-weight:600;background:var(--bg);}
+  .delta{font-size:11.5px;font-weight:600;}
+  .fin-insight{background:var(--brand-soft);border-left:3px solid var(--brand);border-radius:0 8px 8px 0;
+    font-size:13px;color:var(--ink2);line-height:1.7;}
+  .fin-insight b{color:var(--brand);font-weight:600;}
+
+  /* ===== 行业对标 ===== */
+  .bench-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .bench-card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:16px;}
+  .bench-card h3{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:12px;}
+  .bench-row{border-bottom:1px dashed var(--line);font-size:13px;padding:9px 0;}
+  .bench-row .name{color:var(--ink2);}
+  .bench-row .cv{font-weight:600;color:var(--ink);}
+  .bench-row .iv{color:var(--ink3);}
+  .bench-diff .pill.good{background:var(--brand-soft);color:var(--brand);}
+  .bench-diff .pill.bad{background:var(--warn-soft);color:var(--warn);}
+  .benchmark-table-wrap{background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:none;}
+  .benchmark-table{width:100%;border-collapse:collapse;}
+  .benchmark-table th,.benchmark-table td{padding:9px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);font-weight:normal;}
+  .benchmark-table th{background:var(--bg);color:var(--ink3);font-weight:500;font-size:12px;}
+  .benchmark-table td:first-child,.benchmark-table th:first-child{text-align:left;color:var(--ink);}
+  .benchmark-table td{font-variant-numeric:tabular-nums;}
+  .benchmark-table .diff{color:var(--up);font-weight:600;}
+  .benchmark-table .diff.down{color:var(--down);}
+
+  /* ===== 综合结论（概况式浅蓝 concl 卡片） ===== */
+  .band.dark{background:linear-gradient(180deg,#f0f6fc,#ffffff);border:1px solid #c8ddf2;border-left:3px solid var(--brand);color:var(--ink);}
+  .conclusion-header{margin-bottom:4px;}
+  .ai-badge{background:var(--brand-soft);color:var(--brand);border:1px solid #cfe2f5;font-size:12px;font-weight:500;
+    padding:2px 8px;border-radius:5px;}
+  .conclusion-header h2{font-size:17px;font-weight:600;color:var(--ink);letter-spacing:normal;}
+  .conclusion-main{display:grid;grid-template-columns:1.35fr .65fr;gap:24px;align-items:start;margin-top:14px;}
+  .score-main .num{font-size:44px;font-weight:600;color:var(--brand);line-height:1;}
+  .score-main .cap{font-size:12px;color:var(--ink3);}
+  .score-bar{background:var(--line);}
+  .score-bar .fill{background:var(--brand);}
+  .score-desc{font-size:12.5px;color:var(--ink3);}
+  .analysis-panel h3{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:10px;}
+  .analysis-panel p{font-size:13.5px;color:var(--ink2);line-height:1.8;margin-bottom:16px;}
+  .pros-box h4{font-size:13px;font-weight:600;color:var(--up);margin-bottom:10px;}
+  .pros-box li{font-size:13px;color:var(--ink2);line-height:1.7;}
+  .pros-box li::before{color:var(--up);}
+  .risks-box h4{font-size:13px;font-weight:600;color:var(--down);margin-bottom:10px;}
+  .risks-box li{font-size:13px;color:var(--ink2);line-height:1.7;}
+  .risks-box li::before{color:var(--down);}
+
+  /* ===== 通用 ===== */
+  p{margin-bottom:10px;color:var(--ink2);}
+  strong{color:var(--ink);font-weight:600;}
+  h3{font-size:14px;font-weight:600;margin:16px 0 10px;color:var(--ink);}
+  ul{margin:0 0 10px 18px;color:var(--ink2);}
+  li{margin-bottom:6px;}
+  .note{font-size:12px;color:var(--ink3);margin-top:8px;}
+  .footer{background:transparent;border-top:1px solid var(--line);padding:18px 4px;font-size:12px;color:var(--ink3);line-height:1.8;}
+
+  /* ===== 打印 ===== */
+  @media print{
+    @page{margin:10mm;}
+    html,body{background:#fff;-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .page{max-width:none;padding:0;}
+    .btn-export{display:none !important;}
+    .band,.card,.hero{break-inside:avoid;}
+    .svgchart *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
+
+  /* ===== 响应式 ===== */
+  @media(max-width:920px){
+    .page{padding:24px 16px 48px;}
+    .fin-layout{grid-template-columns:1fr;}
+    .conclusion-main{grid-template-columns:1fr;gap:24px;}
+    .bench-grid{grid-template-columns:1fr;}
+  }
+  @media(max-width:640px){
+    .page{padding:20px 14px 48px;}
+    .rp-header h1{font-size:22px;}
+    .band,.card,.hero{padding:16px;}
+    .kpi-row,.prof-grid,.growth-grid,.solvency-grid,.efficiency-grid,.benchmark-grid{grid-template-columns:1fr;}
+    .hero-kpis{grid-template-columns:1fr 1fr;}
+    table{font-size:12px;}
+    .fin-table th,.fin-table td,.benchmark-table th,.benchmark-table td{padding:7px 8px;}
+  }</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- 顶部 topbar -->
+  <header class="rp-header">
+    <div class="header-main">
+      <div class="eyebrow">基本面分析报告 · FUNDAMENTAL ANALYSIS</div>
+      <h1>{{ data.hero.name }}</h1>
+      <div class="sub">{{ data.hero.sub }}</div>
+      <div class="sub">报告日期：{{ report_date }} &nbsp;|&nbsp; 行业：{{ data.hero.industry }} &nbsp;|&nbsp; 数据区间：{{ data.hero.period_label }} &nbsp;|&nbsp; 货币单位：{{ data.hero.currency }}</div>
+    </div>
+    <button type="button" class="btn-export" id="btnExportPdf" title="导出 PDF">导出 PDF</button>
+  </header>
+
+  <!-- Hero / KPI 概览 -->
+  <section class="hero">
+    <div class="hero-kpis">
+      {% for k in data.hero.kpis %}
+      <div class="hero-kpi">
+        <div class="lab">{{ k.lab }}</div>
+        <div class="val">{{ k.val }}{% if k.lab == "综合评分" %}<small>/100</small>{% endif %}</div>
+        <div class="extra {{ k.extra_cls }}">{{ k.extra }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ① 财务报表解析 -->
+  <section class="band white" id="financials">
+    <div class="fin-header">
+      <div class="fin-badge">01</div>
+      <div class="fin-title">
+        <h2>财务报表解析</h2>
+        <p>切换三大报表，解读资产结构、盈利质量与现金流健康度</p>
+      </div>
+    </div>
+
+    <div class="fin-tabs">
+      <div class="fin-tab active" data-tab="balance">资产负债表</div>
+      <div class="fin-tab" data-tab="income">利润表</div>
+      <div class="fin-tab" data-tab="cash">现金流量表</div>
+    </div>
+
+    <div class="fin-controls">
+      <label class="fin-controls-label" for="finViewSel">报告类型</label>
+      <select id="finViewSel" class="fin-select">
+        <option value="">默认（最近三期）</option>
+        <option value="annual">年报</option>
+        <option value="interim">中报</option>
+        <option value="quarterly">单季度</option>
+      </select>
+      <span class="fin-controls-hint">未选择时展示默认的最近三期数据；切换后表格实时刷新</span>
+    </div>
+
+    <div class="fin-layout">
+      <div class="fin-table-wrap">
+        <div id="panel-balance" class="fin-panel active">
+          <table class="fin-table">
+            <thead><tr><th>科目</th>{% for p in data.fin.periods %}<th>{{ p }}</th>{% endfor %}<th>同比</th><th>环比</th></tr></thead>
+            <tbody>
+              {% for row in data.fin.balance %}
+              <tr><td>{{ row.name }}</td>{% for v in row.vals %}<td>{{ v }}</td>{% endfor %}<td class="delta {{ row.yoy_cls }}">{{ row.yoy }}</td><td class="delta {{ row.qoq_cls }}">{{ row.qoq }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div id="panel-income" class="fin-panel">
+          <table class="fin-table">
+            <thead><tr><th>科目</th>{% for p in data.fin.periods %}<th>{{ p }}</th>{% endfor %}<th>同比</th><th>环比</th></tr></thead>
+            <tbody>
+              {% for row in data.fin.income %}
+              <tr><td>{{ row.name }}</td>{% for v in row.vals %}<td>{{ v }}</td>{% endfor %}<td class="delta {{ row.yoy_cls }}">{{ row.yoy }}</td><td class="delta {{ row.qoq_cls }}">{{ row.qoq }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div id="panel-cash" class="fin-panel">
+          <table class="fin-table">
+            <thead><tr><th>科目</th>{% for p in data.fin.periods %}<th>{{ p }}</th>{% endfor %}<th>同比</th><th>环比</th></tr></thead>
+            <tbody>
+              {% for row in data.fin.cash %}
+              <tr><td>{{ row.name }}</td>{% for v in row.vals %}<td>{{ v }}</td>{% endfor %}<td class="delta {{ row.yoy_cls }}">{{ row.yoy }}</td><td class="delta {{ row.qoq_cls }}">{{ row.qoq }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card structure-card">
+        <h3 id="finStructTitle">资产结构构成（{{ data.fin.periods[-1] }}）</h3>
+        <div id="finStructBars">
+        {% for s in data.fin.structure %}
+        <div class="bar-row">
+          <div class="lbl"><span><b>{{ s.name }}</b></span><span>{{ s.pct }}</span></div>
+          <div class="progress"><div class="fill {{ 'navy' if s.deep else 'blue' }}" style="width:{{ s.w }}%"></div></div>
+        </div>
+        {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="fin-insight" id="finInsight">
+      <b>解读：</b>{{ data.fin.insight }}
+    </div>
+  </section>
+
+  {% macro kpi_cards(metrics, ph) %}
+  <div class="kpi-row">
+    {% if metrics %}
+      {% for mt in metrics[:4] %}
+        <div class="card kpi-card">
+          <div class="l">{{ mt.label }}</div>
+          <div class="v">{{ mt.value }}{{ mt.unit or "" }}</div>
+          <div class="d {{ 'up' if mt.industry_percentile and mt.industry_percentile != '—' else 'up' }}">{{ mt.industry_percentile or "+1.2pp" }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      {% for p in ph %}
+        <div class="card kpi-card">
+          <div class="l">{{ p.l }}</div>
+          <div class="v">{{ p.v }}</div>
+          <div class="d {{ p.dc }}">{{ p.d }}</div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+  {% endmacro %}
+
+  {% macro bar_chart_svg(chart, cid="c", uniform=False) %}
+  {% if chart and chart.get('bars') %}
+  {% set ax = chart.axis %}
+  {% set W = 760 %}{% set H = 280 %}
+  {% set ML = 54 %}{% set MR = 18 %}{% set MT = 28 %}{% set MB = 42 %}
+  {% set PW = W - ML - MR %}{% set PH = H - MT - MB %}{% set BY = MT + PH %}
+  {% set nb = chart.bars | length %}{% set colW = PW / nb %}{% set barW = [colW * 0.46, 48] | min %}
+  <svg class="svgchart" viewBox="0 0 {{W}} {{H}}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ chart.title }}">
+    <defs>
+      <linearGradient id="gBar{{cid}}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#6BA0DE"/><stop offset="100%" stop-color="#2B5E9E"/>
+      </linearGradient>
+      <linearGradient id="gDeep{{cid}}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2E63A8"/><stop offset="100%" stop-color="#102B4A"/>
+      </linearGradient>
+    </defs>
+    {% for t in ax.ticks %}
+      {% set y = BY - (t - ax.min) / (ax.max - ax.min) * PH %}
+      <line x1="{{ML}}" y1="{{y}}" x2="{{ML + PW}}" y2="{{y}}" class="grid"/>
+      <text x="{{ML - 9}}" y="{{y + 4}}" class="ytick">{{ "%.{0}f".format(ax.dec) | format(t) }}</text>
+    {% endfor %}
+    {# 底部坐标轴 #}
+    <line x1="{{ML}}" y1="{{BY}}" x2="{{ML + PW}}" y2="{{BY}}" class="axis"/>
+    {# 零基线（仅当数据跨越 0 时绘制，区分正负柱体） #}
+    {% set zy = BY - (0 - ax.min) / (ax.max - ax.min) * PH %}
+    {% set zyc = [zy, MT] | max %}
+    {% set zyc = [zyc, BY] | min %}
+    {% if ax.min < 0 and ax.max > 0 %}
+    <line x1="{{ML}}" y1="{{zyc}}" x2="{{ML + PW}}" y2="{{zyc}}" class="zeroline"/>
+    {% endif %}
+    {% for b in chart.bars %}
+      {% set cx = ML + colW * (loop.index0 + 0.5) %}
+      {% set vy = BY - (b.n - ax.min) / (ax.max - ax.min) * PH %}
+      {% if b.n >= 0 %}
+        {% set ry = vy %}{% set rh = zyc - vy %}
+        {% set laby = vy - 9 %}
+      {% else %}
+        {% set ry = zyc %}{% set rh = vy - zyc %}
+        {% set laby = vy + 16 %}
+      {% endif %}
+      <rect x="{{cx - barW / 2}}" y="{{ry}}" width="{{barW}}" height="{{rh}}" rx="5"
+            {% if uniform %}fill="#3E72B8"{% else %}fill="url(#{% if b.deep %}gDeep{{cid}}{% else %}gBar{{cid}}{% endif %})"{% endif %} class="bcol"/>
+      <text x="{{cx}}" y="{{laby}}" class="vlabel {{ 'vdeep' if b.deep else '' }}">{{ b.v }}</text>
+      <text x="{{cx}}" y="{{BY + 22}}" class="xlabel">{{ b.yr }}</text>
+    {% endfor %}
+  </svg>
+  {% endif %}
+  {% endmacro %}
+
+  <!-- ② 盈利能力评估 -->
+  <section class="band light" id="profitability">
+    <div class="fin-header">
+      <div class="fin-badge">02</div>
+      <div class="fin-title">
+        <h2>盈利能力评估</h2>
+        <p>衡量企业赚取利润的效率与股东权益回报水平</p>
+      </div>
+    </div>
+
+    <div class="fin-controls">
+      <label class="fin-controls-label" for="profViewSel">报告类型</label>
+      <select id="profViewSel" class="fin-select">
+        <option value="">默认（近期）</option>
+        <option value="annual">年报</option>
+        <option value="interim">中报</option>
+        <option value="quarterly">单季度</option>
+      </select>
+      <span class="fin-controls-hint">未选择时展示默认的近期数据；切换后卡片与图表实时刷新</span>
+    </div>
+
+    <div class="prof-grid" id="profGrid">
+      {% for c in data.prof.cards %}
+      <div class="prof-card{% if c.key == 'gross' %} active{% endif %}" data-metric="{{ c.key }}">
+        <div class="lab">{{ c.lab }}</div>
+        <div class="val">{{ c.val }}</div>
+        <div class="delta {{ c.delta_cls }}">{{ c.delta }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if data.prof.chart %}
+    <div class="card prof-chart">
+      <div class="chart-hd"><div class="ttl" id="profChartTitle">{{ data.prof.chart.title }}</div>{% if data.prof.chart.unit %}<div class="unit" id="profUnit">单位：{{ data.prof.chart.unit }}</div>{% endif %}</div>
+      <div id="profChartBox">
+        {{ bar_chart_svg(data.prof.chart, "prof", uniform=True) }}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="fin-insight">
+      <b>解读：</b><span id="profInsight">{{ data.prof.insight }}</span>
+    </div>
+  </section>
+
+    <!-- ③ 成长性评估 -->
+  <section class="band light" id="growth">
+    <div class="fin-header">
+      <div class="fin-badge">03</div>
+      <div class="fin-title">
+        <h2>成长性评估</h2>
+        <p>评估营收与利润的持续扩张能力与增长质量</p>
+      </div>
+    </div>
+
+    <div class="fin-controls">
+      <label class="fin-controls-label" for="growthViewSel">报告类型</label>
+      <select id="growthViewSel" class="fin-select">
+        <option value="">默认（近期）</option>
+        <option value="annual">年报</option>
+        <option value="interim">中报</option>
+        <option value="quarterly">单季度</option>
+      </select>
+      <span class="fin-controls-hint">未选择时展示默认的近期数据；切换后卡片与图表实时刷新</span>
+    </div>
+
+    <div class="growth-grid" id="growthGrid">
+      {% for c in data.growth.cards %}
+      <div class="growth-card{% if c.key == 'rev' %} active{% endif %}" data-metric="{{ c.key }}">
+        <div class="lab">{{ c.lab }}</div>
+        <div class="val">{{ c.val }}</div>
+        <div class="tag {{ c.tag_cls }}">{{ c.tag }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if data.growth.chart %}
+    <div class="card growth-chart">
+      <div class="chart-hd"><div class="ttl" id="growthChartTitle">{{ data.growth.chart.title }}</div>{% if data.growth.chart.unit %}<div class="unit" id="growthUnit">单位：{{ data.growth.chart.unit }}</div>{% endif %}</div>
+      <div id="growthChartBox">
+        {{ bar_chart_svg(data.growth.chart, "growth", uniform=True) }}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="fin-insight">
+      <b>解读：</b><span id="growthInsight">{{ data.growth.insight }}</span>
+    </div>
+  </section>
+
+    <!-- ④ 偿债能力评估 -->
+  <section class="band white" id="solvency">
+    <div class="fin-header">
+      <div class="fin-badge">04</div>
+      <div class="fin-title">
+        <h2>偿债能力评估</h2>
+        <p>评估企业偿还短期与长期债务的安全边际与流动性</p>
+      </div>
+    </div>
+
+    <div class="fin-controls">
+      <label class="fin-controls-label" for="solvencyViewSel">报告类型</label>
+      <select id="solvencyViewSel" class="fin-select">
+        <option value="">默认（近期）</option>
+        <option value="annual">年报</option>
+        <option value="interim">中报</option>
+        <option value="quarterly">单季度</option>
+      </select>
+      <span class="fin-controls-hint">未选择时展示默认的近期数据；切换后卡片与图表实时刷新</span>
+    </div>
+
+    <div class="solvency-grid" id="solvencyGrid">
+      {% for c in data.solv.cards %}
+      <div class="solvency-card{% if c.key == 'debt' %} active{% endif %}" data-metric="{{ c.key }}">
+        <div class="lab">{{ c.lab }}</div>
+        <div class="val">{{ c.val }}</div>
+        <div class="tag {{ c.tag_cls }}">{{ c.tag }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if data.solv.chart %}
+    <div class="card solvency-chart">
+      <div class="chart-hd"><div class="ttl" id="solvencyChartTitle">{{ data.solv.chart.title }}</div>{% if data.solv.chart.unit %}<div class="unit" id="solvencyUnit">单位：{{ data.solv.chart.unit }}</div>{% endif %}</div>
+      <div id="solvencyChartBox">
+        {{ bar_chart_svg(data.solv.chart, "solv", uniform=True) }}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="fin-insight">
+      <b>解读：</b><span id="solvencyInsight">{{ data.solv.insight }}</span>
+    </div>
+  </section>
+
+    <!-- ⑤ 运营效率评估 -->
+  <section class="band light" id="efficiency">
+    <div class="fin-header">
+      <div class="fin-badge">05</div>
+      <div class="fin-title">
+        <h2>运营效率评估</h2>
+        <p>评估资产周转速度与营运资本管理能力</p>
+      </div>
+    </div>
+
+    <div class="fin-controls">
+      <label class="fin-controls-label" for="efficiencyViewSel">报告类型</label>
+      <select id="efficiencyViewSel" class="fin-select">
+        <option value="">默认（近期）</option>
+        <option value="annual">年报</option>
+        <option value="interim">中报</option>
+        <option value="quarterly">单季度</option>
+      </select>
+      <span class="fin-controls-hint">未选择时展示默认的近期数据；切换后卡片与图表实时刷新</span>
+    </div>
+
+    <div class="efficiency-grid" id="efficiencyGrid">
+      {% for c in data.eff.cards %}
+      <div class="efficiency-card{% if c.key == 'inv' %} active{% endif %}" data-metric="{{ c.key }}">
+        <div class="lab">{{ c.lab }}</div>
+        <div class="val">{{ c.val }}</div>
+        <div class="tag {{ c.tag_cls }}">{{ c.tag }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if data.eff.chart %}
+    <div class="card efficiency-chart">
+      <div class="chart-hd"><div class="ttl" id="efficiencyChartTitle">{{ data.eff.chart.title }}</div>{% if data.eff.chart.unit %}<div class="unit" id="efficiencyUnit">单位：{{ data.eff.chart.unit }}</div>{% endif %}</div>
+      <div id="efficiencyChartBox">
+        {{ bar_chart_svg(data.eff.chart, "eff", uniform=True) }}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="fin-insight">
+      <b>解读：</b><span id="efficiencyInsight">{{ data.eff.insight }}</span>
+    </div>
+  </section>
+
+  <!-- ⑥ 行业对标 -->
+  <section class="band white" id="benchmark">
+    <div class="fin-header">
+      <div class="fin-badge">06</div>
+      <div class="fin-title">
+        <h2>行业对标</h2>
+        <p>将核心财务指标与行业基准（中位数）进行横向对比</p>
+      </div>
+    </div>
+
+    <div class="benchmark-grid">
+      {% for c in data.bench.cards %}
+      <div class="benchmark-card">
+        <div class="lab">{{ c.lab }}</div>
+        <div class="val">{{ c.val }}</div>
+        <div class="tag {{ c.tag_cls }}">{{ c.tag }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="benchmark-table-wrap">
+      <table class="benchmark-table">
+        <thead><tr><th>指标</th><th>本企业</th><th>行业基准</th><th>对比</th></tr></thead>
+        <tbody>
+          {% for r in data.bench.rows %}
+          <tr><td>{{ r.name }}</td><td>{{ r.self }}</td><td>{{ r.peer }}</td><td class="diff {{ r.diff_cls }}">{{ r.diff }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="fin-insight">
+      <b>解读：</b>{{ data.bench.insight }}
+    </div>
+  </section>
+
+  <!-- 综合结论 -->
+  <section class="band dark" id="conclusion">
+    <div class="conclusion-header">
+      <span class="ai-badge">AI 研判</span>
+      <h2>综合结论</h2>
+    </div>
+
+    <div class="conclusion-main">
+      <div class="conclusion-left">
+        <div class="score-panel">
+          <div class="score-main">
+            <div class="num">{{ data.conclusion.score }}</div>
+            <div class="cap">综合评分 / 100</div>
+          </div>
+          <div class="score-bar"><div class="fill" style="width:{{ data.conclusion.score }}%"></div></div>
+          <div class="score-desc">{{ data.conclusion.score_desc }}</div>
+        </div>
+
+        <div class="analysis-panel">
+          <h3>综合研判</h3>
+          {% if result.llm_summary %}
+            <p>{{ result.llm_summary }}</p>
+          {% else %}
+            <p>本报告基于六大模块量化评估，公司综合评分 {{ data.conclusion.score }} 分，{{ data.conclusion.score_desc }}；核心优势与关注风险见右侧。</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="conclusion-right">
+        <div class="pros-box">
+          <h4>核心优势</h4>
+          <ul>
+            {% for p in data.conclusion.pros %}
+            <li>{{ p }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div class="risks-box">
+          <h4>关注风险</h4>
+          <ul>
+            {% for r in data.conclusion.risks %}
+            <li>{{ r }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <div class="footer">
+    {% if data.is_real %}
+    本报告由基本面分析智能体基于 AkShare 公开数据自动生成，仅供研究参考，不构成任何投资建议。<br>
+    {% else %}
+    本报告由基本面分析智能体自动生成，所有数据均为布局占位演示，不构成任何投资建议。<br>
+    {% endif %}
+    投资有风险，决策需谨慎。生成时间：{{ report_date }}
+  </div>
+
+</div>
+
+<script>
+  /* 导出 PDF：调用浏览器原生打印，在对话框中选择“另存为 PDF”即可保存到本地。
+     这是单文件离线 HTML 最可靠的导出方式，能完整保留渐变、配色与内嵌图表。 */
+  (function(){
+    var btn = document.getElementById('btnExportPdf');
+    if(btn){
+      btn.addEventListener('click', function(){
+        window.print();
+      });
+    }
+  })();
+
+  /* 财务报表 tabs 切换 */
+  document.querySelectorAll('.fin-tab').forEach(function(tab){
+    tab.addEventListener('click', function(){
+      var target = this.dataset.tab;
+      document.querySelectorAll('.fin-tab').forEach(function(t){ t.classList.remove('active'); });
+      document.querySelectorAll('.fin-panel').forEach(function(p){ p.classList.remove('active'); });
+      this.classList.add('active');
+      document.getElementById('panel-' + target).classList.add('active');
+    });
+  });
+
+  /* 财务报表 报告类型下拉切换（默认 / 年报 / 中报 / 单季度） */
+  (function(){
+    var sel = document.getElementById('finViewSel');
+    if(!sel) return;
+    var VIEWS = {{ data.fin_views | tojson }};
+    function tableHTML(rows, periods){
+      var head = '<thead><tr><th>科目</th>' + periods.map(function(p){ return '<th>' + p + '</th>'; }).join('') + '<th>同比</th><th>环比</th></tr></thead>';
+      var body = '<tbody>' + rows.map(function(r){
+        var cells = r.vals.map(function(x){ return '<td>' + x + '</td>'; }).join('');
+        return '<tr><td>' + r.name + '</td>' + cells + '<td class="delta ' + r.yoy_cls + '">' + r.yoy + '</td><td class="delta ' + r.qoq_cls + '">' + r.qoq + '</td></tr>';
+      }).join('') + '</tbody>';
+      return '<table class="fin-table">' + head + body + '</table>';
+    }
+    function renderFinView(key){
+      var v = VIEWS[key] || VIEWS['default'];
+      if(!v) return;
+      var periods = v.periods || [];
+      var pb = document.getElementById('panel-balance');
+      var pi = document.getElementById('panel-income');
+      var pc = document.getElementById('panel-cash');
+      if(pb) pb.innerHTML = tableHTML(v.balance, periods);
+      if(pi) pi.innerHTML = tableHTML(v.income, periods);
+      if(pc) pc.innerHTML = tableHTML(v.cash, periods);
+      var st = document.getElementById('finStructTitle');
+      if(st) st.textContent = '资产结构构成（' + (periods[periods.length - 1] || '') + '）';
+      var sb = document.getElementById('finStructBars');
+      if(sb) sb.innerHTML = (v.structure || []).map(function(s){
+        var cls = s.deep ? 'navy' : 'blue';
+        return '<div class="bar-row"><div class="lbl"><span><b>' + s.name + '</b></span><span>' + s.pct + '</span></div><div class="progress"><div class="fill ' + cls + '" style="width:' + s.w + '%"></div></div></div>';
+      }).join('');
+      var ins = document.getElementById('finInsight');
+      if(ins) ins.innerHTML = '<b>解读：</b>' + (v.insight || '');
+    }
+    sel.addEventListener('change', function(){
+      renderFinView(this.value || 'default');
+    });
+  })();
+
+  /* ---- 通用：坐标轴与统一柱色柱状图 ---- */
+  function niceStep(x){
+    if(x <= 0) return 1;
+    var e = Math.floor(Math.log10(x));
+    var base = Math.pow(10, e);
+    var ms = [1, 2, 2.5, 5, 10];
+    for(var i = 0; i < ms.length; i++){ if(x <= ms[i] * base) return ms[i] * base; }
+    return 10 * base;
+  }
+  function axisFor(vals){
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if(hi === lo){ hi = lo + (lo === 0 ? 1 : Math.abs(lo) * 0.1 + 1); }
+    var rng = hi - lo, step = niceStep(rng / 4);
+    var nlo = Math.floor(lo / step) * step, nhi = Math.ceil(hi / step) * step;
+    if(nhi - hi < step * 0.25) nhi += step;
+    if(lo - nlo < step * 0.25 && nlo > 0) nlo -= step;
+    var dec = (step < 2) ? 1 : 0;
+    var ticks = [], t = nlo;
+    while(t <= nhi + 1e-9){ ticks.push(Math.round(t * 10000) / 10000); t += step; }
+    return {min:nlo, max:nhi, ticks:ticks, dec:dec};
+  }
+  /* 统一柱色柱状图（所有柱子同一颜色 #3E72B8，零基线 clamp 到绘图区内，避免越界） */
+  function drawChartSVG(bars, unit){
+    if(!bars || !bars.length) return '<div class="chart-empty">暂无数据</div>';
+    var W = 760, H = 280, ML = 54, MR = 18, MT = 28, MB = 42;
+    var PW = W - ML - MR, PH = H - MT - MB, BY = MT + PH;
+    var vals = bars.map(function(b){ return b.n; });
+    var ax = axisFor(vals);
+    var nb = bars.length, colW = PW / nb, barW = Math.min(colW * 0.46, 48);
+    var dec = ax.dec;
+    var svg = '<svg class="svgchart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img">';
+    ax.ticks.forEach(function(t){
+      var y = BY - (t - ax.min) / (ax.max - ax.min) * PH;
+      svg += '<line x1="' + ML + '" y1="' + y + '" x2="' + (ML + PW) + '" y2="' + y + '" class="grid"/>';
+      svg += '<text x="' + (ML - 9) + '" y="' + (y + 4) + '" class="ytick">' + t.toFixed(dec) + '</text>';
+    });
+    svg += '<line x1="' + ML + '" y1="' + BY + '" x2="' + (ML + PW) + '" y2="' + BY + '" class="axis"/>';
+    var zy = BY - (0 - ax.min) / (ax.max - ax.min) * PH;
+    var zyc = Math.max(MT, Math.min(BY, zy));
+    if(ax.min < 0 && ax.max > 0){
+      svg += '<line x1="' + ML + '" y1="' + zyc + '" x2="' + (ML + PW) + '" y2="' + zyc + '" class="zeroline"/>';
+    }
+    bars.forEach(function(b, i){
+      var cx = ML + colW * (i + 0.5);
+      var vy = BY - (b.n - ax.min) / (ax.max - ax.min) * PH;
+      var ry, rh, laby;
+      if(b.n >= 0){ ry = vy; rh = zyc - vy; laby = vy - 9; }
+      else { ry = zyc; rh = vy - zyc; laby = vy + 16; }
+      if(rh < 0) rh = 0;
+      svg += '<rect x="' + (cx - barW / 2) + '" y="' + ry + '" width="' + barW + '" height="' + rh + '" rx="5" fill="#3E72B8" class="bcol"/>';
+      svg += '<text x="' + cx + '" y="' + laby + '" class="vlabel">' + b.v + '</text>';
+      svg += '<text x="' + cx + '" y="' + (BY + 22) + '" class="xlabel">' + b.yr + '</text>';
+    });
+    svg += '</svg>';
+    return svg;
+  }
+
+  /* ---- 盈利能力 报告类型下拉 + 指标按钮切换 ---- */
+  (function(){
+    var sel = document.getElementById('profViewSel');
+    var box = document.getElementById('profChartBox');
+    var titleEl = document.getElementById('profChartTitle');
+    var unitEl = document.getElementById('profUnit');
+    var grid = document.getElementById('profGrid');
+    var insEl = document.getElementById('profInsight');
+    if(!sel || !box || !grid) return;
+    var VIEWS = {{ data.prof_views | tojson }};
+    var curView = 'default';
+    var curMetric = 'gross';
+
+    function drawChart(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      var m = v.metrics[curMetric];
+      if(!m) return;
+      if(titleEl) titleEl.textContent = m.title;
+      if(unitEl) unitEl.textContent = '单位：' + (m.unit || '');
+      box.innerHTML = drawChartSVG(m.bars, m.unit);
+    }
+    function renderCards(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      grid.innerHTML = v.cards.map(function(c){
+        var act = (c.key === curMetric) ? ' active' : '';
+        return '<div class="prof-card' + act + '" data-metric="' + c.key + '">'
+             + '<div class="lab">' + c.lab + '</div>'
+             + '<div class="val">' + c.val + '</div>'
+             + '<div class="delta ' + c.delta_cls + '">' + c.delta + '</div></div>';
+      }).join('');
+      grid.querySelectorAll('.prof-card').forEach(function(el){
+        el.addEventListener('click', function(){
+          curMetric = this.getAttribute('data-metric');
+          grid.querySelectorAll('.prof-card').forEach(function(x){ x.classList.remove('active'); });
+          this.classList.add('active');
+          drawChart();
+        });
+      });
+    }
+    function renderInsight(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      if(insEl) insEl.textContent = v.insight || '';
+    }
+    sel.addEventListener('change', function(){
+      curView = this.value || 'default';
+      renderCards();
+      drawChart();
+      renderInsight();
+    });
+    /* 初始渲染（与默认视图一致，并绑定交互） */
+    renderCards();
+    drawChart();
+    renderInsight();
+  })();
+
+  /* ---- 通用：报告类型下拉 + 指标按钮切换（成长性 / 偿债能力 / 运营效率） ---- */
+  function setupModuleView(cfg){
+    var sel = document.getElementById(cfg.sel);
+    var box = document.getElementById(cfg.box);
+    var titleEl = document.getElementById(cfg.title);
+    var unitEl = document.getElementById(cfg.unit);
+    var grid = document.getElementById(cfg.grid);
+    var insEl = document.getElementById(cfg.ins);
+    if(!sel || !box || !grid) return;
+    var VIEWS = cfg.views;
+    var curView = 'default';
+    var curMetric = cfg.first;
+    function drawChart(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      var m = v.metrics[curMetric];
+      if(!m) return;
+      if(titleEl) titleEl.textContent = m.title;
+      if(unitEl) unitEl.textContent = '单位：' + (m.unit || '');
+      box.innerHTML = drawChartSVG(m.bars, m.unit);
+    }
+    function renderCards(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      grid.innerHTML = v.cards.map(function(c){
+        return cfg.cardRender(c, c.key === curMetric);
+      }).join('');
+      var cards = grid.querySelectorAll('[data-metric]');
+      cards.forEach(function(el){
+        el.addEventListener('click', function(){
+          curMetric = this.getAttribute('data-metric');
+          cards.forEach(function(x){ x.classList.remove('active'); });
+          this.classList.add('active');
+          drawChart();
+        });
+      });
+    }
+    function renderInsight(){
+      var v = VIEWS[curView] || VIEWS['default'];
+      if(insEl) insEl.textContent = v.insight || '';
+    }
+    sel.addEventListener('change', function(){
+      curView = this.value || 'default';
+      renderCards();
+      drawChart();
+      renderInsight();
+    });
+    renderCards();
+    drawChart();
+    renderInsight();
+  }
+
+  function growthCardRender(c, active){
+    return '<div class="growth-card' + (active ? ' active' : '') + '" data-metric="' + c.key + '">'
+      + '<div class="lab">' + c.lab + '</div>'
+      + '<div class="val">' + c.val + '</div>'
+      + '<div class="tag ' + c.tag_cls + '">' + c.tag + '</div></div>';
+  }
+  function solvencyCardRender(c, active){
+    return '<div class="solvency-card' + (active ? ' active' : '') + '" data-metric="' + c.key + '">'
+      + '<div class="lab">' + c.lab + '</div>'
+      + '<div class="val">' + c.val + '</div>'
+      + '<div class="tag ' + c.tag_cls + '">' + c.tag + '</div></div>';
+  }
+  function efficiencyCardRender(c, active){
+    return '<div class="efficiency-card' + (active ? ' active' : '') + '" data-metric="' + c.key + '">'
+      + '<div class="lab">' + c.lab + '</div>'
+      + '<div class="val">' + c.val + '</div>'
+      + '<div class="tag ' + c.tag_cls + '">' + c.tag + '</div></div>';
+  }
+
+  setupModuleView({sel:'growthViewSel', grid:'growthGrid', box:'growthChartBox', title:'growthChartTitle', unit:'growthUnit', ins:'growthInsight', views:{{ data.growth_views | tojson }}, first:'rev', cardRender:growthCardRender});
+  setupModuleView({sel:'solvencyViewSel', grid:'solvencyGrid', box:'solvencyChartBox', title:'solvencyChartTitle', unit:'solvencyUnit', ins:'solvencyInsight', views:{{ data.solvency_views | tojson }}, first:'debt', cardRender:solvencyCardRender});
+  setupModuleView({sel:'efficiencyViewSel', grid:'efficiencyGrid', box:'efficiencyChartBox', title:'efficiencyChartTitle', unit:'efficiencyUnit', ins:'efficiencyInsight', views:{{ data.efficiency_views | tojson }}, first:'inv', cardRender:efficiencyCardRender});
+
+  /* 顶部导航截图热区平滑滚动 */
+  (function(){
+    var hotspots = document.querySelectorAll('.nav-hotspot');
+    var sections = [];
+    hotspots.forEach(function(a){
+      var id = a.getAttribute('data-target');
+      var el = document.getElementById(id);
+      if(el) sections.push({link:a, el:el});
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        var target = document.getElementById(a.getAttribute('data-target'));
+        if(target){
+          target.scrollIntoView({behavior:'smooth', block:'start'});
+          history.replaceState(null, null, '#' + a.getAttribute('data-target'));
+        }
+      });
+    });
+
+    /* 滚动时高亮当前模块对应热区 */
+    function refreshActive(){
+      var scrollY = window.scrollY || window.pageYOffset;
+      var offset = 80; /* 预留顶部空间 */
+      var active = sections[0] ? sections[0].link : null;
+      sections.forEach(function(item){
+        if(item.el.offsetTop - offset <= scrollY) active = item.link;
+      });
+      hotspots.forEach(function(h){ h.classList.remove('active'); });
+      if(active) active.classList.add('active');
+    }
+    window.addEventListener('scroll', refreshActive, {passive:true});
+    refreshActive();
+  })();
+</script>
+
+</body>
+</html>

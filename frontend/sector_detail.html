@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TradeAI · 板块详情</title>
+<style>
+  :root{
+    --bg:#F5F5F7;          /* 页面浅灰 */
+    --card:#FFFFFF;        /* 卡片白 */
+    --ink:#1D1D1F;         /* 主文字 */
+    --sub:#6E6E73;         /* 次要文字 */
+    --muted:#86868B;       /* 辅助文字 */
+    --blue:#0071E3;        /* 强调蓝 */
+    --up:#D8392F;          /* 涨 红 */
+    --down:#1AA05A;        /* 跌 绿 */
+    --search-bg:#F5F7FA;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);
+    display:flex;justify-content:center;padding:48px 16px;
+  }
+  .page{
+    width:100%;max-width:1200px;background:var(--card);
+    border-radius:24px;padding:56px 48px;
+  }
+  .breadcrumb{font-size:14px;color:var(--muted);font-weight:500;margin-bottom:8px;}
+  .title{font-size:36px;font-weight:700;letter-spacing:-0.5px;}
+  .subtitle{font-size:16px;color:var(--sub);margin-top:8px;}
+  .aibtn{
+    margin-top:20px;background:var(--blue);color:#fff;font-size:15px;font-weight:500;font-family:inherit;
+    border:none;border-radius:22px;height:44px;padding:0 24px;cursor:pointer;
+    transition:background .15s;display:inline-flex;align-items:center;gap:8px;
+  }
+  .aibtn:hover{background:#005BB8;}
+  .ov-report{margin-top:20px}
+  .ov-progress{display:flex;align-items:center;gap:14px}
+  .ov-progress-bar{flex:1;height:8px;background:var(--search-bg);border-radius:6px;overflow:hidden}
+  .ov-progress-fill{display:block;height:100%;width:0;background:var(--blue);border-radius:6px;transition:width .4s ease}
+  .ov-progress-text{font-size:13px;color:var(--sub);font-weight:500;white-space:nowrap}
+  .ov-progress-text .err{color:var(--down)}
+  .ov-frame{width:100%;border:1px solid #E2E2E7;border-radius:16px;margin-top:16px;background:#fff;min-height:1000px}
+  .search{
+    margin-top:28px;height:56px;border-radius:var(--radius);
+    background:var(--search-bg);display:flex;align-items:center;gap:12px;
+    padding:0 18px;border:1px solid transparent;transition:border-color .15s ease;
+  }
+  .search:focus-within{border-color:var(--blue);}
+  .search svg{flex:0 0 auto;}
+  .search input{
+    flex:1;border:none;background:transparent;outline:none;
+    font-size:16px;color:var(--ink);font-family:inherit;
+  }
+  .search input::placeholder{color:var(--muted);}
+  .meta{font-size:14px;color:var(--muted);font-weight:500;margin:18px 0 14px;}
+  .sortbar{display:flex;align-items:center;gap:10px;margin-top:18px;}
+  .sort-label{font-size:14px;color:var(--sub);font-weight:500;}
+  .sort-sel{
+    height:40px;border-radius:12px;border:1px solid #E2E2E7;background:#fff;
+    font-size:14px;color:var(--ink);padding:0 12px;font-family:inherit;cursor:pointer;
+  }
+  .sort-sel:focus{outline:none;border-color:var(--blue);}
+  .mcap{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:104px;}
+  .mcap .mv{font-size:16px;font-weight:700;}
+  .mcap .ms{font-size:12px;color:var(--muted);}
+  .list{display:flex;flex-direction:column;gap:14px;}
+  .row{
+    display:flex;align-items:center;gap:16px;cursor:pointer;
+    background:#F5F5F7;border-radius:var(--radius);padding: 18px 24px;
+    transition:background .15s ease;
+  }
+  .row:hover{background:#ECECEF;}
+  .co{flex:0 0 auto;display:flex;flex-direction:column;gap:4px;min-width:200px;}
+  .co .name{font-size:18px;font-weight:700;}
+  .co .code{font-size:13px;color:var(--muted);}
+  .tag{
+    flex:0 0 auto;background:#EAF2FC;color:#0071E3;
+    font-size:13px;font-weight:500;padding:4px 12px;border-radius:14px;
+  }
+  .spacer{flex:1 1 auto;}
+  .price{display:flex;align-items:baseline;gap:12px;flex:0 0 auto;}
+  .price .val{font-size:18px;font-weight:700;}
+  .price .chg{font-size:14px;font-weight:600;}
+  .chg.up{color:var(--up);}
+  .chg.down{color:var(--down);}
+  .chg.flat{color:var(--muted);}
+  .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:15px;}
+  .pager{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:28px;flex-wrap:wrap;}
+  .pager button{
+    min-width:38px;height:36px;padding:0 12px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
+    font-size:14px;font-weight:600;border-radius:10px;cursor:pointer;transition:all .15s ease;font-family:inherit;
+  }
+  .pager button:hover:not(:disabled):not(.active){border-color:var(--blue);color:var(--blue);}
+  .pager button.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .pager button:disabled{opacity:.45;cursor:not-allowed;}
+  .pager .page-gap{color:var(--muted);padding:0 4px;font-size:14px;}
+  /* 跳转到指定页 */
+  .jump{position:relative;display:inline-flex;align-items:center;gap:6px;margin-left:10px;}
+  .jump-label{font-size:14px;color:var(--muted);font-weight:500;}
+  .jump-input{
+    width:56px;height:36px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
+    font-size:14px;font-weight:600;border-radius:10px;padding:0 8px;text-align:center;
+    font-family:inherit;box-sizing:border-box;transition:border-color .15s ease;
+  }
+  .jump-input:focus{outline:none;border-color:var(--blue);}
+  .jump-input.invalid{border-color:var(--up);}
+  .jump-go{
+    min-width:38px;height:36px;padding:0 12px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
+    font-size:14px;font-weight:600;border-radius:10px;cursor:pointer;transition:all .15s ease;font-family:inherit;
+  }
+  .jump-go:hover{border-color:var(--blue);color:var(--blue);}
+  .jump-err{
+    position:absolute;top:100%;left:0;margin-top:4px;white-space:nowrap;
+    font-size:13px;color:var(--up);font-weight:500;
+  }
+  @media (max-width:480px){
+    body{padding:24px 12px;}
+    .page{border-radius:20px;padding:32px 20px;}
+    .title{font-size:28px;}
+    .row{flex-wrap:wrap;gap:10px;padding:14px 16px;}
+    .co{min-width:0;flex:1 1 100%;}
+    .tag{order:3;}
+    .price{order:2;margin-left:auto;}
+    .spacer{display:none;}
+    .mcap{order:5;align-items:flex-start;min-width:0;}
+  }
+</style>
+</head>
+<body>
+  <div class="page" id="page">
+    <a href="sector.html?restore=1" class="breadcrumb" style="display:inline-block;margin-bottom:12px;text-decoration:none;">← 返回板块列表</a>
+    <div class="breadcrumb" id="crumb">TradeAI / 板块</div>
+    <div class="title" id="title">板块详情</div>
+    <div class="subtitle" id="subtitle">该板块下全部个股一览</div>
+
+    <button class="aibtn" id="aiBoardReport" type="button">AI生成板块报告</button>
+    <div id="board-report" class="ov-report" style="display:none">
+      <div id="board-progress" class="ov-progress">
+        <div class="ov-progress-bar"><span id="board-progress-fill" class="ov-progress-fill"></span></div>
+        <div class="ov-progress-text"><span id="board-stage">准备中…</span> · <span id="board-pct">0%</span></div>
+      </div>
+      <iframe id="board-frame" class="ov-frame" title="板块深度报告" style="display:none"></iframe>
+    </div>
+
+    <div class="search">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="11" cy="11" r="7" stroke="#86868B" stroke-width="2"/>
+        <path d="M20 20L16.5 16.5" stroke="#86868B" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input id="q" type="text" placeholder="搜索股票名称、代码或行业…" autocomplete="off" />
+    </div>
+
+    <div class="sortbar">
+      <span class="sort-label">排序</span>
+      <select id="sortSel" class="sort-sel">
+        <option value="mcap_desc">总市值（高→低）</option>
+        <option value="mcap_asc">总市值（低→高）</option>
+        <option value="fcap_desc">流通市值（高→低）</option>
+        <option value="fcap_asc">流通市值（低→高）</option>
+        <option value="chg_desc">涨跌幅（高→低）</option>
+        <option value="chg_asc">涨跌幅（低→高）</option>
+      </select>
+    </div>
+
+    <div class="meta" id="meta">共 -- 只</div>
+
+    <div class="list" id="list"></div>
+    <div class="pager" id="pager"></div>
+  </div>
+
+<script src="js/list_state.js"></script>
+<script>
+  // ===== 配置 =====
+  const PER_PAGE_DEFAULT = 6;              // 每页默认 6 支, 与个股列表页一致(返回时按离开前的值恢复)
+  let PER_PAGE = PER_PAGE_DEFAULT;
+  const API_URL = '/api/board_members';    // 同源后端代理(真实数据, 动态)
+
+  // ===== URL 参数: code=BKxxxx(必填), name=板块名(可选, 用于首屏标题) =====
+  const params0 = new URLSearchParams(location.search);
+  const BK = (params0.get('code') || params0.get('bk') || '').trim().toUpperCase();
+  const nameFromUrl = (params0.get('name') || '').trim();
+
+  const list = document.getElementById('list');
+  const meta = document.getElementById('meta');
+  const q = document.getElementById('q');
+  const pager = document.getElementById('pager');
+  const sortSel = document.getElementById('sortSel');
+
+  const state = { sort:'mcap_desc', order:'desc', page:1, q:'' };  // 与个股列表页一致: 默认总市值降序
+
+  // ===== 列表状态保持 =====
+  // 从个股详情返回本板块成员列表时恢复页码/每页条数/关键词/排序/滚动位置;
+  // 从板块列表首次进入时 ListState.load 返回 null, 保持默认第 1 页。
+  const RESTORE = (function(){
+    const r = (window.ListState && ListState.load('sector_detail')) || null;
+    if(!r) return null;
+    if(r.bk && BK && r.bk !== BK) return null;   // 换了个板块, 不复用上个板块的页码
+    return r;
+  })();
+  let scrollRestored = false;
+  if(RESTORE){
+    if(RESTORE.sort) state.sort = RESTORE.sort;
+    if(RESTORE.order) state.order = RESTORE.order;
+    if(RESTORE.page) state.page = RESTORE.page;
+    if(typeof RESTORE.q === 'string') state.q = RESTORE.q;
+    const ps = Number(RESTORE.pageSize);
+    if(ps >= 1 && ps <= 100) PER_PAGE = ps;
+    if(sortSel) sortSel.value = state.sort;      // UI 与恢复后的状态保持一致
+    if(q) q.value = state.q;
+    ListState.cleanUrl();
+  }
+  function snapshot(){
+    return { sort: state.sort, order: state.order, page: state.page,
+             q: state.q, pageSize: PER_PAGE, scrollY: window.scrollY, bk: BK };
+  }
+  function saveListState(){ if(window.ListState) ListState.save('sector_detail', snapshot()); }
+  // 兜底保存: 任何离开本页的导航(含浏览器后退/前进)都能带上最新状态
+  window.addEventListener('pagehide', saveListState);
+  function restoreScrollOnce(){
+    if(scrollRestored || !RESTORE) return;
+    scrollRestored = true;
+    ListState.restoreScroll(RESTORE.scrollY);
+  }
+
+  // ===== 标题与面包屑(先用 URL 中的板块名, 接口返回后校正) =====
+  function setTitle(name){
+    const disp = name || BK || '板块详情';
+    document.getElementById('title').textContent = disp;
+    document.getElementById('crumb').textContent = 'TradeAI / 板块 / ' + disp;
+    document.title = 'TradeAI · ' + disp;
+  }
+  if(nameFromUrl) setTitle(nameFromUrl);
+
+  function buildRow(d){
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML =
+      '<div class="co"><div class="name">'+d.name+'</div><div class="code">'+d.code+'</div></div>'+
+      '<div class="tag">'+d.ind+'</div>'+
+      '<div class="spacer"></div>'+
+      '<div class="mcap"><span class="mv">'+d.mcap_disp+'</span><span class="ms">流通 '+d.fcap_disp+'</span></div>'+
+      '<div class="price"><span class="val">'+d.price+'</span><span class="chg '+d.dir+'">'+d.chg+'</span></div>';
+    // 点击跳转到个股详情页(与个股列表页一致; 携带来源参数, 使"返回列表"回到本板块)
+    const code = (d.code || '').replace(/[^0-9]/g, '');
+    if(code){
+      row.dataset.code = code;
+      // 进入个股详情前保存本板块列表状态, 返回时可回到当前页与滚动位置
+      row.addEventListener('click', () => {
+        saveListState();
+        location.href = 'stock_detail.html?code=' + encodeURIComponent(code)
+                      + '&from=sector&bk=' + encodeURIComponent(BK)
+                      + '&bkname=' + encodeURIComponent(document.getElementById('title').textContent);
+      });
+    }
+    return row;
+  }
+
+  function showLoading(){
+    list.innerHTML = '<div class="empty">加载中…</div>';
+    meta.textContent = '';
+    pager.innerHTML = '';
+  }
+
+  function showError(msg){
+    list.innerHTML = '<div class="empty">'+msg+'</div>';
+    pager.innerHTML = '';
+  }
+
+  // ===== API 模式渲染(后端已排序+分页, 前端直接出图) =====
+  function renderApi(data){
+    if(data.bk_name) setTitle(data.bk_name);
+    const stocks = data.stocks || [];
+    const total = data.total || 0;
+    const cur = data.page || 1;
+    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+    list.innerHTML = '';
+    if(total === 0){
+      // 空状态: 区分「板块确无成分股」与「搜索无结果」
+      const kw = state.q.trim();
+      list.innerHTML = '<div class="empty">'
+        + (kw ? ('未找到匹配「'+ kw +'」的个股') : '该板块暂无成分股') + '</div>';
+      meta.textContent = '共 0 只';
+      pager.innerHTML = '';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    stocks.forEach(d => frag.appendChild(buildRow(d)));
+    list.appendChild(frag);
+    meta.textContent = '共 ' + total + ' 只 · 第 ' + cur + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 支';
+    renderPager(totalPages, cur);
+    restoreScrollOnce();   // 首屏渲染完成后恢复离开前的滚动位置
+  }
+
+  // ===== 统一入口: 走同源 API(真实数据动态返回) =====
+  function load(){
+    if(!/^BK\d+$/.test(BK)){
+      showError('板块代码无效, 请从板块列表页点击进入');
+      meta.textContent = '';
+      return;
+    }
+    showLoading();
+    const params = new URLSearchParams({
+      bk: BK, sort: state.sort, order: state.order,
+      page: state.page, pageSize: PER_PAGE, q: state.q,
+    });
+    fetch(API_URL + '?' + params.toString())
+      .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(data => { renderApi(data); })
+      .catch(err => {
+        console.warn('板块成员获取失败:', err);
+        meta.textContent = '';
+        showError('板块数据加载失败, 请稍后重试');
+      });
+  }
+
+  function goPage(p){
+    state.page = p;
+    load();
+  }
+
+  function renderPager(total, cur){
+    pager.innerHTML = '';
+    const mkBtn = (label, opts) => {
+      opts = opts || {};
+      const b = document.createElement('button');
+      b.textContent = label;
+      if(opts.active) b.classList.add('active');
+      if(opts.disabled) b.disabled = true;
+      if(opts.onClick) b.addEventListener('click', opts.onClick);
+      return b;
+    };
+
+    pager.appendChild(mkBtn('‹ 上一页', {disabled: cur<=1, onClick: () => goPage(cur-1)}));
+
+    // 页码窗口：总数 ≤7 全部展示，否则首尾 + 当前页邻域 + 省略号
+    const win = [];
+    if(total <= 7){
+      for(let i=1;i<=total;i++) win.push(i);
+    } else {
+      win.push(1);
+      if(cur > 3) win.push('...');
+      const s = Math.max(2, cur-1), e = Math.min(total-1, cur+1);
+      for(let i=s;i<=e;i++) win.push(i);
+      if(cur < total-2) win.push('...');
+      win.push(total);
+    }
+    win.forEach(p => {
+      if(p === '...'){
+        const gap = document.createElement('span');
+        gap.className = 'page-gap';
+        gap.textContent = '…';
+        pager.appendChild(gap);
+      } else {
+        pager.appendChild(mkBtn(String(p), {active: p===cur, onClick: () => goPage(p)}));
+      }
+    });
+
+    pager.appendChild(mkBtn('下一页 ›', {disabled: cur>=total, onClick: () => goPage(cur+1)}));
+
+    // ===== 跳转到指定页组件 =====
+    const jump = document.createElement('span');
+    jump.className = 'jump';
+
+    const jumpLabel = document.createElement('span');
+    jumpLabel.className = 'jump-label';
+    jumpLabel.textContent = '跳至';
+
+    const jumpInput = document.createElement('input');
+    jumpInput.className = 'jump-input';
+    jumpInput.type = 'text';
+    jumpInput.inputMode = 'numeric';
+    jumpInput.placeholder = '页码';
+    jumpInput.value = String(cur);
+    jumpInput.setAttribute('aria-label', '跳转到指定页码');
+
+    const jumpBtn = document.createElement('button');
+    jumpBtn.className = 'jump-go';
+    jumpBtn.textContent = '跳转';
+
+    const jumpErr = document.createElement('span');
+    jumpErr.className = 'jump-err';
+
+    let errTimer = null;
+    function showJumpErr(msg){
+      jumpErr.textContent = msg;
+      jumpInput.classList.add('invalid');
+      if(errTimer) clearTimeout(errTimer);
+      errTimer = setTimeout(() => { jumpErr.textContent = ''; jumpInput.classList.remove('invalid'); }, 2500);
+    }
+    function doJump(){
+      const raw = jumpInput.value.trim();
+      if(!/^[1-9]\d*$/.test(raw)){           // 仅接受正整数
+        showJumpErr('请输入正整数页码');
+        return;
+      }
+      const p = parseInt(raw, 10);
+      if(p < 1 || p > total){                 // 超出有效页码范围
+        showJumpErr('页码需在 1–' + total + ' 之间');
+        return;
+      }
+      if(p === cur) return;                   // 已在目标页, 不重复刷新
+      goPage(p);
+    }
+    jumpBtn.addEventListener('click', doJump);
+    jumpInput.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); doJump(); } });
+    jumpInput.addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d]/g, ''); }); // 实时过滤非数字
+
+    jump.appendChild(jumpLabel);
+    jump.appendChild(jumpInput);
+    jump.appendChild(jumpBtn);
+    jump.appendChild(jumpErr);
+    pager.appendChild(jump);
+  }
+
+  q.addEventListener('input', e => { state.q = e.target.value; state.page = 1; load(); });
+  sortSel.addEventListener('change', e => {
+    const v = e.target.value;                 // 形如 mcap_desc
+    state.sort = v;
+    state.order = v.endsWith('_asc') ? 'asc' : 'desc';
+    state.page = 1;
+    load();
+  });
+
+  // ===== 启动 =====
+  load();
+
+  // ===== AI 生成板块深度报告 =====
+  // 流程与个股详情页 AI 报告一致：POST /api/report(report_type=board, bk) 拿 task_id
+  // -> 轮询状态/进度 -> SUCCESS 后 iframe 内嵌报告（/api/report/{id}/html 由前端服务同源反代）
+  const API_REPORT = '/api/report';
+  let bdTaskId = null, bdTimer = null;
+
+  function bdSetProgress(pct, stage){
+    const fill = document.getElementById('board-progress-fill');
+    const pctEl = document.getElementById('board-pct');
+    const stageEl = document.getElementById('board-stage');
+    if(fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    if(pctEl) pctEl.textContent = pct + '%';
+    if(stageEl) stageEl.textContent = stage || '生成中';
+  }
+
+  function bdShowReport(taskId){
+    const frame = document.getElementById('board-frame');
+    const prog = document.getElementById('board-progress');
+    if(prog) prog.style.display = 'none';
+    if(frame){
+      frame.style.display = 'block';
+      frame.onload = function(){
+        try { frame.style.height = (frame.contentDocument.body.scrollHeight + 24) + 'px'; } catch(e){}
+      };
+      frame.src = API_REPORT + '/' + taskId + '/html';
+    }
+  }
+
+  function bdPoll(){
+    if(!bdTaskId) return;
+    fetch(API_REPORT + '/' + bdTaskId)
+      .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(d=>{
+        bdSetProgress(d.progress||0, d.status==='SUCCESS' ? '完成' : (d.stage || '生成中'));
+        if(d.status === 'SUCCESS'){
+          if(bdTimer){ clearInterval(bdTimer); bdTimer = null; }
+          bdShowReport(bdTaskId);
+          const btn = document.getElementById('aiBoardReport');
+          if(btn){ btn.disabled = false; btn.textContent = '重新生成报告'; }
+        } else if(d.status === 'FAILED'){
+          if(bdTimer){ clearInterval(bdTimer); bdTimer = null; }
+          const stageEl = document.getElementById('board-stage');
+          if(stageEl) stageEl.innerHTML = '<span class="err">生成失败：' + (d.error||'未知错误') + '</span>';
+          const btn = document.getElementById('aiBoardReport');
+          if(btn){ btn.disabled = false; btn.textContent = '重试生成'; }
+        }
+      })
+      .catch(err=>{ console.warn('轮询状态失败(下次重试):', err); });
+  }
+
+  document.getElementById('aiBoardReport').addEventListener('click', function(){
+    const btn = this;
+    btn.disabled = true; btn.textContent = '生成中…';
+    const box = document.getElementById('board-report');
+    const prog = document.getElementById('board-progress');
+    const frame = document.getElementById('board-frame');
+    if(box) box.style.display = 'block';
+    if(prog) prog.style.display = 'flex';
+    if(frame){ frame.style.display = 'none'; frame.removeAttribute('src'); frame.style.height = ''; }
+    bdSetProgress(0, '提交请求…');
+
+    fetch(API_REPORT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({bk: BK, bk_name: (document.getElementById('title').textContent || ''), report_type:'board', use_llm:true})
+    })
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(d=>{
+      bdTaskId = d.task_id;
+      if(bdTimer) clearInterval(bdTimer);
+      bdTimer = setInterval(bdPoll, 1500);
+      bdPoll();
+    })
+    .catch(err=>{
+      btn.disabled = false; btn.textContent = 'AI生成板块报告';
+      const stageEl = document.getElementById('board-stage');
+      if(stageEl) stageEl.innerHTML = '<span class="err">请求失败：' + err.message + '（请确认报告服务已启动）</span>';
+      console.error(err);
+    });
+  });
+</script>
+</body>
+</html>

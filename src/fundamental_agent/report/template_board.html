@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ bk_name }}板块深度分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1f2933; --sub:#5b6b7b; --line:#e3e8ee;
+    --brand:#c8102e; --brand2:#0b6e9c; --blue:#1f6fb2; --green:#2e8b57; --amber:#d98a00;
+    --soft:#eef3f8; --tag:#eaf2fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",-apple-system,"Segoe UI",sans-serif;
+    line-height:1.7;font-size:15px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 22px 80px;}
+  header.cover{background:linear-gradient(135deg,#0b2545 0%,#13315c 55%,#1f6fb2 100%);
+    color:#fff;border-radius:16px;padding:40px 38px;margin-bottom:26px;box-shadow:0 10px 30px rgba(11,37,69,.25);}
+  header.cover .kick{letter-spacing:3px;font-size:13px;opacity:.85;}
+  header.cover h1{margin:8px 0 14px;font-size:30px;line-height:1.35;font-weight:700;}
+  header.cover .meta{font-size:13px;opacity:.9;}
+  header.cover .meta span{margin-right:18px;}
+  .lead{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--brand);
+    border-radius:10px;padding:20px 24px;margin:22px 0;}
+  .lead h2{margin:0 0 10px;font-size:18px;color:var(--brand);}
+  .lead ul{margin:8px 0 0;padding-left:20px;}
+  .lead li{margin:6px 0;}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:26px 28px;margin:22px 0;box-shadow:0 2px 10px rgba(31,41,51,.04);}
+  section h2.sec{font-size:21px;margin:0 0 6px;padding-bottom:10px;border-bottom:2px solid var(--soft);}
+  section h2.sec .num{color:var(--brand);font-weight:700;margin-right:8px;}
+  .sub{color:var(--sub);font-size:13.5px;margin:0 0 18px;}
+  h3.grp{font-size:17px;margin:24px 0 6px;color:var(--brand2);}
+  h3.grp .badge{display:inline-block;background:var(--tag);color:var(--blue);font-size:12px;
+    padding:2px 9px;border-radius:20px;margin-left:8px;vertical-align:middle;font-weight:600;}
+  .chart{width:100%;height:420px;margin:10px 0 4px;}
+  .chart.sm{height:360px;}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;}
+  th,td{border:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--soft);color:var(--ink);font-weight:600;}
+  tr:nth-child(even) td{background:#fbfcfe;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin:16px 0;}
+  .ccard{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:#fff;
+    border-top:4px solid var(--brand2);}
+  .ccard h4{margin:0 0 4px;font-size:16px;}
+  .ccard .code{color:var(--sub);font-size:12.5px;font-weight:400;}
+  .ccard .role{display:inline-block;background:var(--tag);color:var(--blue);font-size:11.5px;
+    padding:1px 8px;border-radius:12px;margin:6px 0 8px;}
+  .ccard p{margin:5px 0;font-size:13px;color:#374049;}
+  .ccard .kv{font-size:12.5px;color:var(--sub);}
+  .ccard .kv b{color:var(--ink);}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;margin:2px 3px 0 0;}
+  .pill.up{background:#e7f6ee;color:#1f8a4c;}
+  .pill.down{background:#fdecec;color:#c0392b;}
+  .pill.flat{background:#eef0f3;color:#5b6b7b;}
+  .pill.warn{background:#fff3e0;color:#b97400;}
+  .topo{display:flex;flex-wrap:wrap;gap:14px;align-items:stretch;justify-content:center;margin:10px 0 6px;}
+  .tier{flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;}
+  .tier .tt{font-weight:700;color:#fff;padding:6px 12px;border-radius:6px;margin-bottom:10px;font-size:14px;}
+  .t1{background:#0b6e9c;} .t2{background:#c8102e;} .t3{background:#2e8b57;} .t4{background:#7a5aa0;}
+  .tier ul{margin:0;padding-left:18px;font-size:12.8px;}
+  .tier li{margin:4px 0;}
+  .arrow{display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--sub);}
+  .note{background:#fff8e9;border:1px solid #f0d9a8;border-radius:8px;padding:12px 16px;font-size:13px;color:#7a5a13;margin:14px 0;}
+  .risk{background:#fdecec;border:1px solid #f3c0bd;border-radius:8px;padding:14px 18px;font-size:13px;color:#8a2b22;margin:14px 0;}
+  .risk b{color:#c0392b;}
+  .disc{background:#eef3f8;border:1px solid #cfe0ee;border-radius:8px;padding:12px 16px;font-size:12px;color:#3a5168;margin:18px 0;}
+  .foot{text-align:center;color:var(--sub);font-size:12px;margin-top:30px;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0;}
+  .kpi{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff;text-align:center;}
+  .kpi .l{font-size:12px;color:var(--sub);}
+  .kpi .v{font-size:20px;font-weight:700;margin-top:4px;}
+  .kpi .v.up{color:#c0392b;} .kpi .v.down{color:#2e8b57;}
+  .legend{font-size:12px;color:var(--sub);margin-top:4px;}
+  @media(max-width:760px){.topo{flex-direction:column;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="cover">
+  <div class="kick">A股板块深度研究 · TradeAI</div>
+  <h1>{{ bk_name }}（{{ bk }}）<br>板块深度分析报告</h1>
+  <div class="meta">
+    <span>报告日期：{{ report_date }}</span>
+    <span>数据口径：东方财富实时行情 + 最新财报指标</span>
+    <span>覆盖标的：{{ member_count }} 家成分股</span>
+  </div>
+</header>
+
+<!-- 首屏结论 -->
+<div class="lead">
+  <h2>核心结论（先读版）</h2>
+  <ul>
+    {% for kp in key_points %}<li>{{ kp | blockp }}</li>{% endfor %}
+  </ul>
+</div>
+
+<!-- 01 板块概览 -->
+<section>
+  <h2 class="sec"><span class="num">01</span>{{ bk_name }}板块概览与产业链全景</h2>
+  <p class="sub">板块指数与规模数据为东方财富实时行情口径；成员全景覆盖全部 {{ member_count }} 家成分股。</p>
+  <div class="kpis">
+    <div class="kpi"><div class="l">板块指数</div><div class="v">{{ quote.price_disp }}</div></div>
+    <div class="kpi"><div class="l">涨跌幅</div><div class="v {{ quote.chg_dir }}">{{ quote.chg_disp }}</div></div>
+    <div class="kpi"><div class="l">上涨 / 下跌家数</div><div class="v">{{ quote.up_n }} / {{ quote.down_n }}</div></div>
+    <div class="kpi"><div class="l">成分股总市值</div><div class="v">{{ stats.total_mcap_disp }}</div></div>
+    <div class="kpi"><div class="l">领涨股</div><div class="v" style="font-size:15px">{{ quote.leader }} <span style="font-size:12px;color:var(--sub)">{{ quote.leader_chg }}</span></div></div>
+  </div>
+  <div class="topo">
+    {% set tier_colors = ['t1','t2','t3','t4'] %}
+    {% for g in groups[:4] %}
+    <div class="tier">
+      <div class="tt {{ tier_colors[loop.index0] }}">{{ g.title }}</div>
+      <ul>
+        {% for c in g.companies %}<li><b>{{ c.name }}</b>{% if c.role %} · {{ c.role }}{% endif %}</li>{% endfor %}
+      </ul>
+    </div>
+    {% if not loop.last %}<div class="arrow">→</div>{% endif %}
+    {% endfor %}
+  </div>
+  {% for g in groups %}
+    {% if g.intro %}<div class="note"><b>{{ g.title }}：</b>{{ g.intro }}</div>{% endif %}
+  {% endfor %}
+</section>
+
+<!-- 02 分组公司卡片 -->
+<section>
+  <h2 class="sec"><span class="num">02</span>重点公司分层解析（按总市值前 {{ companies | length }}）</h2>
+  <p class="sub">公司卡片数据为实时行情 + 最新披露财务指标；定性分析由 AI 生成，均以真实数据为锚点。</p>
+  {% for g in groups %}
+  <h3 class="grp">{{ loop.index }}.{{ g.title }}{% if g.badge %}<span class="badge">{{ g.badge }}</span>{% endif %}</h3>
+  <div class="cards">
+    {% for c in g.companies %}
+    <div class="ccard">
+      <h4>{{ c.name }} <span class="code">{{ c.code }}</span></h4>
+      {% if c.role %}<span class="role">{{ c.role }}</span>{% endif %}
+      {% if c.desc %}<p>{{ c.desc }}</p>{% endif %}
+      {% if c.kv %}<div class="kv"><b>关键数据</b> {{ c.kv }}</div>{% endif %}
+      {% if c.pills %}<p>{% for p in c.pills %}<span class="pill {{ p.type }}">{{ p.text }}</span>{% endfor %}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+
+<!-- 03 定量横向对比 -->
+<section>
+  <h2 class="sec"><span class="num">03</span>重点公司定量横向对比</h2>
+  <p class="sub">下图按总市值排序（左轴，亿元），并叠加当日涨跌幅（右轴，%），覆盖重点公司样本。</p>
+  <div id="chartMcap" class="chart"></div>
+  <div class="legend">注：市值为实时行情快照口径；涨跌幅为交易日当日数据，解读时注意时点差异。</div>
+  <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div>
+      <h3 class="grp">3.1 毛利率对比（盈利质量）</h3>
+      <div id="chartGross" class="chart sm"></div>
+    </div>
+    <div>
+      <h3 class="grp">3.2 ROE 对比（股东回报）</h3>
+      <div id="chartRoe" class="chart sm"></div>
+    </div>
+  </div>
+  <h3 class="grp">3.3 成员概览表（真实行情口径）</h3>
+  <table>
+    <thead><tr><th>#</th><th>公司</th><th>代码</th><th>细分行业</th><th>最新价</th><th>涨跌幅</th><th>总市值</th><th>PE-TTM</th><th>PB</th><th>ROE</th><th>毛利率</th><th>营收同比</th></tr></thead>
+    <tbody>
+      {% for c in companies %}
+      <tr>
+        <td>{{ c.rank }}</td><td><b>{{ c.name }}</b></td><td>{{ c.code }}</td><td>{{ c.ind }}</td>
+        <td>{{ c.price_disp }}</td>
+        <td style="color:{{ '#c0392b' if c.chg_num and c.chg_num > 0 else ('#2e8b57' if c.chg_num and c.chg_num < 0 else 'inherit') }}">{{ c.chg_disp }}</td>
+        <td>{{ c.mcap_disp }}</td>
+        <td>{{ c.pe_disp }}</td><td>{{ c.pb_disp }}</td>
+        <td>{{ c.roe_disp }}</td><td>{{ c.gross_disp }}</td><td>{{ c.rev_disp }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="legend">注：ROE/毛利率/营收同比为最新报告期口径（东财 F10 / push2 接口），PE/PB 为实时快照；"—"表示该指标未获取。</div>
+</section>
+
+<!-- 04 总结 -->
+<section>
+  <h2 class="sec"><span class="num">04</span>结构化对比结论</h2>
+  {{ summary_html | blockp }}
+  <h3 class="grp">发展趋势</h3>
+  <ul style="padding-left:20px;">
+    {% for t in trends %}<li style="margin:8px 0;">{{ t }}</li>{% endfor %}
+  </ul>
+</section>
+
+<!-- 05 风险与免责 -->
+<section>
+  <h2 class="sec"><span class="num">05</span>风险提示与免责声明</h2>
+  <div class="risk">
+    <b>核心风险提示：</b>
+    <ul style="margin:6px 0 0;padding-left:20px;">
+      {% for r in risk_items %}<li style="margin:6px 0;">{{ r }}</li>{% endfor %}
+    </ul>
+  </div>
+  <div class="disc">
+    <b>免责声明：</b>本报告由 TradeAI 基于东方财富公开行情接口（push2delay）、公司公开披露与公开资料整理生成，
+    行情与估值数据为接口实时/当日快照口径，财务指标为最新披露报告期口径，部分定性分析由 AI 生成，
+    <b>非官方统一口径，仅供研究参考</b>。本报告仅作板块客观梳理与信息整合，<b>不构成任何投资建议或买卖要约</b>。
+    市场有风险，投资需谨慎，决策请以公司正式公告及独立判断为准。
+  </div>
+</section>
+
+<div class="foot">{{ bk_name }}板块深度分析报告 · 数据截至 {{ report_date }} · 仅供研究参考，不构成投资建议</div>
+
+</div>
+
+<script>
+// ===== ECharts 数据（真实接口口径）=====
+var names = {{ charts.names | tojson }};
+var mcaps = {{ charts.mcaps | tojson }};
+var chgs  = {{ charts.chgs | tojson }};
+var gross = {{ charts.grosses | tojson }};
+var roes  = {{ charts.roes | tojson }};
+
+function mk(v){ return v===null||v===undefined ? '-' : v; }
+
+// 图1：市值 + 涨跌幅 组合
+(function(){
+  var el = document.getElementById('chartMcap');
+  if(!el || typeof echarts==='undefined') return;
+  var chart = echarts.init(el);
+  chart.setOption({
+    tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},
+    legend:{data:['总市值(亿)','当日涨跌幅(%)'],top:0},
+    grid:{left:60,right:55,top:40,bottom:90},
+    xAxis:{type:'category',data:names,axisLabel:{rotate:45,fontSize:10}},
+    yAxis:[
+      {type:'value',name:'市值/亿',position:'left'},
+      {type:'value',name:'%',position:'right'}
+    ],
+    series:[
+      {name:'总市值(亿)',type:'bar',data:mcaps,itemStyle:{color:'#1f6fb2'}},
+      {name:'当日涨跌幅(%)',type:'line',yAxisIndex:1,data:chgs.map(mk),itemStyle:{color:'#c8102e'},symbolSize:6}
+    ]
+  });
+  window.addEventListener('resize',function(){chart.resize();});
+})();
+
+// 图2：毛利率对比（仅含有效值）
+(function(){
+  var el = document.getElementById('chartGross');
+  if(!el || typeof echarts==='undefined') return;
+  var chart = echarts.init(el);
+  var pairs = [];
+  for(var i=0;i<names.length;i++){ if(gross[i]!==null&&gross[i]!==undefined) pairs.push([names[i],gross[i]]); }
+  pairs.sort(function(a,b){return a[1]-b[1];});
+  chart.setOption({
+    tooltip:{trigger:'axis'},
+    grid:{left:60,right:20,top:20,bottom:70},
+    xAxis:{type:'category',data:pairs.map(function(p){return p[0];}),axisLabel:{rotate:45,fontSize:9}},
+    yAxis:{type:'value',name:'毛利率%'},
+    series:[{type:'bar',data:pairs.map(function(p){return p[1];}),
+      itemStyle:{color:function(params){ return params.value>=40?'#2e8b57':(params.value>=25?'#1f6fb2':'#d98a00'); }}}]
+  });
+  window.addEventListener('resize',function(){chart.resize();});
+})();
+
+// 图3：ROE 对比（仅含有效值）
+(function(){
+  var el = document.getElementById('chartRoe');
+  if(!el || typeof echarts==='undefined') return;
+  var chart = echarts.init(el);
+  var pairs = [];
+  for(var i=0;i<names.length;i++){ if(roes[i]!==null&&roes[i]!==undefined) pairs.push([names[i],roes[i]]); }
+  pairs.sort(function(a,b){return a[1]-b[1];});
+  chart.setOption({
+    tooltip:{trigger:'axis'},
+    grid:{left:60,right:20,top:20,bottom:70},
+    xAxis:{type:'category',data:pairs.map(function(p){return p[0];}),axisLabel:{rotate:45,fontSize:9}},
+    yAxis:{type:'value',name:'ROE%'},
+    series:[{type:'bar',data:pairs.map(function(p){return p[1];}),
+      itemStyle:{color:function(params){ return params.value>=15?'#2e8b57':(params.value>=8?'#1f6fb2':'#d98a00'); }}}]
+  });
+  window.addEventListener('resize',function(){chart.resize();});
+})();
+</script>
+</body>
+</html>

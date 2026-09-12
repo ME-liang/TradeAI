@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>自定义步进器 Stepper · 按住连发</title>
+<style>
+  :root{
+    --st-accent:#0071e3;        /* 与主项目蓝色调一致 */
+    --st-bg:#ffffff;
+    --st-border:#e2e2e7;
+    --st-hover:#f5f5f7;
+    --st-active:#e8e8ed;
+    --st-radius:16px;           /* 与 stock_detail.html 的 --radius 对齐 */
+    --st-text:#1d1d1f;
+    --st-muted:#86868b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#f5f5f7; color:var(--st-text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; align-items:center; padding:48px 16px; gap:40px;
+  }
+  h1{font-size:22px; font-weight:600; margin:0 0 4px;}
+  .hint{color:var(--st-muted); font-size:14px; margin:0;}
+  .panel{background:#fff; border-radius:20px; padding:28px 32px; box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; flex-direction:column; gap:24px; align-items:center;}
+
+  /* ===== 步进器组件 ===== */
+  .stepper{
+    display:inline-flex; align-items:stretch;
+    background:var(--st-bg);
+    border:1px solid var(--st-border);
+    border-radius:var(--st-radius);
+    overflow:hidden;
+    user-select:none; -webkit-user-select:none;
+    touch-action:none;            /* 关键: 阻止触摸时的滚动/缩放手势抢事件 */
+  }
+  .stepper .st-btn{
+    width:48px; height:48px;
+    display:flex; align-items:center; justify-content:center;
+    border:none; background:transparent; cursor:pointer;
+    color:var(--st-accent); font-size:24px; line-height:1;
+    transition:background-color .12s ease;
+    touch-action:none;
+  }
+  .stepper .st-btn:hover{ background:var(--st-hover); }
+  .stepper .st-btn:active{ background:var(--st-active); }
+  .stepper .st-btn:disabled{ color:var(--st-muted); background:transparent; cursor:not-allowed; opacity:.45; }
+  .stepper .st-val{
+    width:72px; min-width:72px;
+    border:none; outline:none; text-align:center;
+    font-size:18px; font-weight:600; color:var(--st-text);
+    background:transparent;
+    font-variant-numeric:tabular-nums;
+  }
+  .stepper .st-val:focus{ background:var(--st-hover); border-radius:8px; }
+
+  /* 演示区信息 */
+  .readout{font-size:14px; color:var(--st-muted); text-align:center; line-height:1.7;}
+  .readout b{color:var(--st-text); font-variant-numeric:tabular-nums;}
+  .cfg{display:flex; gap:20px; flex-wrap:wrap; justify-content:center; font-size:13px; color:var(--st-muted);}
+  .cfg label{display:flex; align-items:center; gap:6px;}
+  .cfg input{width:80px; padding:6px 8px; border:1px solid var(--st-border); border-radius:8px; font-size:13px;}
+</style>
+</head>
+<body>
+  <div>
+    <h1>自定义步进器 · 按住连续增减</h1>
+    <p class="hint">按住左右箭头可连续触发；松开立即停止；支持鼠标与触摸；遵守最小/最大边界。</p>
+  </div>
+
+  <div class="panel">
+    <div id="demo" class="stepper"></div>
+    <div class="readout">
+      当前值：<b id="outVal">1</b>　|　累计触发次数：<b id="outCount">0</b><br>
+      最近一次操作：<b id="outLast">—</b>
+    </div>
+    <div class="cfg">
+      <label>步长 step <input id="cfgStep" type="number" value="1" min="1"></label>
+      <label>初始延迟(ms) <input id="cfgDelay" type="number" value="400" min="0"></label>
+      <label>重复间隔(ms) <input id="cfgInterval" type="number" value="120" min="10"></label>
+    </div>
+  </div>
+
+<script>
+/* =========================================================
+ * Stepper —— 可复用「按住连发」步进器
+ * 用法: const s = new Stepper(mountEl, { value, min, max, step, initialDelay, interval, onChange });
+ * 设计要点:
+ *   1) 统一用 PointerEvent 处理鼠标/触摸/笔, 避免 mouse+touch 双触发
+ *   2) pointerdown 立即步进一次, 之后 initialDelay 后按 interval 重复
+ *   3) pointerup / pointercancel / window blur 立即停 (含拖出按钮也能停)
+ *   4) touch-action:none + preventDefault 阻止页面滚动/选中
+ *   5) 到达 min/max 时钳制, 并禁用对应方向按钮
+ * ========================================================= */
+class Stepper {
+  constructor(mount, opts = {}) {
+    this.mount = mount;
+    this.value = opts.value ?? 0;
+    this.min = opts.min ?? -Infinity;
+    this.max = opts.max ?? Infinity;
+    this.step = opts.step ?? 1;
+    this.initialDelay = opts.initialDelay ?? 400; // 按住后首次重复前的延迟
+    this.interval = opts.interval ?? 120;         // 重复触发间隔
+    this.onChange = typeof opts.onChange === 'function' ? opts.onChange : () => {};
+    this._delayTimer = null;
+    this._repeatTimer = null;
+    this._build();
+    this._render();
+  }
+
+  _build() {
+    this.mount.classList.add('stepper');
+    this.mount.innerHTML =
+      '<button class="st-btn st-dec" type="button" aria-label="减少" data-dir="-1">&#8249;</button>' +
+      '<input class="st-val" type="text" inputmode="numeric" aria-label="数值" />' +
+      '<button class="st-btn st-inc" type="button" aria-label="增加" data-dir="1">&#8250;</button>';
+    this.btnDec = this.mount.querySelector('.st-dec');
+    this.btnInc = this.mount.querySelector('.st-inc');
+    this.input = this.mount.querySelector('.st-val');
+
+    // 左右按钮: 仅在 pointerdown 触发(覆盖 mouse/touch/pen)
+    this.btnDec.addEventListener('pointerdown', (e) => this._onDown(e, -1));
+    this.btnInc.addEventListener('pointerdown', (e) => this._onDown(e, 1));
+
+    // 输入框: 手动修正并钳制
+    this.input.addEventListener('change', () => this._commitInput());
+    this.input.addEventListener('blur', () => this._commitInput());
+
+    // 全局释放: 即使指针移出按钮也能停止
+    this._stopHandler = () => this.stop();
+    document.addEventListener('pointerup', this._stopHandler);
+    document.addEventListener('pointercancel', this._stopHandler);
+    window.addEventListener('blur', this._stopHandler);
+  }
+
+  _onDown(e, dir) {
+    if (e.button !== undefined && e.button !== 0) return; // 仅左键/触摸
+    e.preventDefault();   // 阻止选中 / 滚动 / 后续 click 干扰
+    if (this._atLimit(dir)) return;
+    this._stepOnce(dir);
+    // 取消已有计时, 避免重复
+    this.stop();
+    const tick = () => {
+      if (this._atLimit(dir)) { this.stop(); return; }
+      this._stepOnce(dir);
+    };
+    this._delayTimer = setTimeout(() => {
+      this._repeatTimer = setInterval(tick, this.interval);
+    }, this.initialDelay);
+  }
+
+  _stepOnce(dir) {
+    const next = this.value + dir * this.step;
+    this.value = Math.min(this.max, Math.max(this.min, next));
+    this._render();
+    this.onChange(this.value, dir);
+  }
+
+  _commitInput() {
+    let v = parseFloat(this.input.value);
+    if (isNaN(v)) { this._render(); return; }
+    // 按 step 对齐并钳制
+    v = Math.round(v / this.step) * this.step;
+    this.value = Math.min(this.max, Math.max(this.min, v));
+    this._render();
+    this.onChange(this.value, 0);
+  }
+
+  _atLimit(dir) {
+    if (dir < 0) return this.value <= this.min;
+    if (dir > 0) return this.value >= this.max;
+    return false;
+  }
+
+  stop() {
+    if (this._delayTimer) { clearTimeout(this._delayTimer); this._delayTimer = null; }
+    if (this._repeatTimer) { clearInterval(this._repeatTimer); this._repeatTimer = null; }
+  }
+
+  _render() {
+    this.input.value = String(this.value);
+    this.btnDec.disabled = this.value <= this.min;
+    this.btnInc.disabled = this.value >= this.max;
+  }
+
+  setValue(v) { this.value = Math.min(this.max, Math.max(this.min, v)); this._render(); this.onChange(this.value, 0); }
+  destroy() {
+    this.stop();
+    document.removeEventListener('pointerup', this._stopHandler);
+    document.removeEventListener('pointercancel', this._stopHandler);
+    window.removeEventListener('blur', this._stopHandler);
+  }
+}
+
+/* ===== 演示接线 ===== */
+let count = 0;
+const outVal = document.getElementById('outVal');
+const outCount = document.getElementById('outCount');
+const outLast = document.getElementById('outLast');
+const stepper = new Stepper(document.getElementById('demo'), {
+  value: 1, min: 1, max: 100, step: 1, initialDelay: 400, interval: 120,
+  onChange: (v, dir) => {
+    outVal.textContent = v;
+    outCount.textContent = ++count;
+    outLast.textContent = dir === -1 ? '按住「‹」减小' : (dir === 1 ? '按住「›」增大' : '手动输入');
+  }
+});
+
+// 配置实时生效
+document.getElementById('cfgStep').addEventListener('change', e => { stepper.step = Math.max(1, parseFloat(e.target.value) || 1); });
+document.getElementById('cfgDelay').addEventListener('change', e => { stepper.initialDelay = Math.max(0, parseFloat(e.target.value) || 0); });
+document.getElementById('cfgInterval').addEventListener('change', e => { stepper.interval = Math.max(10, parseFloat(e.target.value) || 10); });
+</script>
+</body>
+</html>

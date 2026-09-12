@@ -35,3 +35,13 @@ data/cache/
 
 # ===== Node 依赖（前端若用到） =====
 node_modules/
+
+# ===== Step 0 基线留档（golden 基线 HTML 随仓，其余 *.html 仍忽略） =====
+!tests/golden/*.html
+!tests/golden/*.json
+
+# ===== 源码白名单（修复 `_*` 与 `*.html` 两条规则误伤的源文件，均须随仓） =====
+!src/**/__init__.py
+!src/fundamental_agent/engine/_util.py
+!src/fundamental_agent/report/*.html
+!frontend/*.html

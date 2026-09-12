@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="TradeAI - AI 驱动的交易分析平台，提供 A 股上市公司基本面分析、财务解析与智能投研报告。">
+  <title>TradeAI - AI 驱动的交易分析平台</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- ===== 顶部导航栏 ===== -->
+  <header class="navbar" id="navbar">
+    <div class="container nav-container">
+      <a href="./" class="nav-brand" aria-label="TradeAI 首页">
+        <span class="nav-logo">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 40 L24 30 L34 36 L52 18" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="52" cy="18" r="4" fill="#fff"/>
+          </svg>
+        </span>
+        <span class="nav-title">Trade<span class="ai">AI</span></span>
+      </a>
+
+      <button class="nav-toggle" id="navToggle" aria-label="打开菜单" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="nav-menu" id="navMenu" aria-label="主导航">
+        <a href="#features">核心功能</a>
+        <a href="stock.html">个股分析</a>
+        <a href="sector.html">板块洞察</a>
+        <a href="#report">智能报告</a>
+      </nav>
+      <button id="btnLogout" title="退出登录"
+        style="margin-left:16px;padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:transparent;color:#fff;font-size:13px;cursor:pointer;">退出</button>
+    </div>
+  </header>
+
+  <!-- ===== 主体内容区 ===== -->
+  <main>
+    <!-- Hero 首屏 -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-graphic">
+          <div class="logo-box">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 40 L24 30 L34 36 L52 18" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="52" cy="18" r="4" fill="#fff"/>
+            </svg>
+          </div>
+          <h1 class="brand-title">Trade<span class="ai">AI</span></h1>
+          <p class="brand-subtitle">AI 驱动的交易分析平台</p>
+        </div>
+
+        <div class="hero-copy">
+          <p class="hero-desc">
+            面向 A 股上市公司，整合财报数据、K 线行情与技术指标，输出专业的基本面分析报告与 AI 投研结论，助力投资决策更高效、更理性。
+          </p>
+          <div class="hero-actions">
+            <a href="stock.html" class="btn btn-primary">个股</a>
+            <a href="sector.html" class="btn btn-primary">板块</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 装饰弧线（移动端呼应设计稿） -->
+      <div class="hero-arc hero-arc-top" aria-hidden="true"></div>
+      <div class="hero-arc hero-arc-bottom" aria-hidden="true"></div>
+    </section>
+
+    <!-- 核心功能入口 -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-head">
+          <h2>核心能力</h2>
+          <p>覆盖上市公司分析的完整链路</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card" id="stock">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+            </div>
+            <h3>个股深度分析</h3>
+            <p>输入股票代码，自动生成盈利能力、成长性、偿债能力、运营效率等多维评估。</p>
+          </article>
+
+          <article class="feature-card" id="sector">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            </div>
+            <h3>板块行业洞察</h3>
+            <p>以申万一级行业为基准，横向对比同业公司的估值与财务表现。</p>
+          </article>
+
+          <article class="feature-card" id="report">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            </div>
+            <h3>智能投研报告</h3>
+            <p>整合基本面、技术面与 AI 结论，一键导出可下载的 HTML 分析报告。</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            </div>
+            <h3>实时财务追踪</h3>
+            <p>年报、中报、单季度视图自由切换，同比/环比指标动态计算。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== 页脚 ===== -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="nav-logo footer-logo">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 40 L24 30 L34 36 L52 18" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="52" cy="18" r="4" fill="#fff"/>
+          </svg>
+        </span>
+        <span class="footer-title">TradeAI</span>
+      </div>
+      <p class="footer-copy">&copy; 2026 TradeAI. AI 驱动的交易分析平台 · 仅供研究与学习使用</p>
+      <div class="footer-links">
+        <a href="#">使用条款</a>
+        <a href="#">隐私政策</a>
+        <a href="#">联系我们</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+
+<script>
+  // AUTH-B: 退出登录 → 注销会话(FastAPI 清 ta_session) → 回登录页
+  (function(){
+    var b = document.getElementById('btnLogout');
+    if(!b) return;
+    b.addEventListener('click', async function(){
+      b.disabled = true;
+      try{ await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'}); }catch(e){}
+      window.location.href = '/login.html';
+    });
+  })();
+</script>
+</body>
+</html>
