@@ -22,10 +22,11 @@ from fundamental_agent.agents.writer_agent import (  # noqa: E402
 
 GOOD_HTML = (
     "<!DOCTYPE html><html><head><style>body{color:#222}"
-    + "/* padding */" * 500
+    + "/* padding */" * 1100  # 篇幅下限 12000 字符（含 CSS）校验要求 mock 稿达标
     + "</style></head><body>"
     "<h1>测试公司（300999）</h1><p>分销业务稳健。</p>"
-    "<script>var a=[1,2];console.log(a);</script>"
+    '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>'
+    "<script>new Chart(document.getElementById('c'),{type:'bar',data:{datasets:[]}});</script>"
     "</body></html>"
 )
 

@@ -21,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..llm import get_router, load_prompt
 from ..llm.base import LLMRequest
+from ..data.annual_report import is_generic_entity
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,45 @@ _RE_BIZ_CLAIM = re.compile(
     r"([一-龥·、（）()A-Za-z0-9]{2,24}?)(?=的|，|,|。|；|;|领域|行业|业务|公司|$)"
 )
 _CONTROL_PCT_THRESHOLD = 20.0  # 持股低于此比例不足以支撑「控股」定性
+
+# ---------------------------------------------------------------------------
+# 股东表口径护栏（2026-09-16）
+#
+# 翻车复盘：报告表头写「前十大股东」，数据却来自东财**前十大流通股东**大表
+# （限售股持有人只显示无限售部分），且脚注被标成「东方财富前十大股东」——
+# 表头与数据源名不副实，且因该票两个口径恰好重合而无法从数字上发现。
+# 根治手段不是「记得改文案」，而是让**表头由口径派生**：口径变了表头必须跟着变，
+# 从结构上不给「流通口径配十大股东表头」留出可能。
+# ---------------------------------------------------------------------------
+HOLDER_CALIBER_ROSTER = "名册"          # 《定期报告》股东名册（总持股含限售，含性质/质押数量）
+HOLDER_CALIBER_TOP10 = "东财十大股东"    # 东财专用接口，与名册同为总持股口径
+HOLDER_CALIBER_FREE = "东财流通股东"     # 东财全市场大表兜底，仅含无限售部分
+
+
+def holders_caliber_of(gov: dict) -> str:
+    """判定股东表口径。优先级：main.py 落库标签 > 名册字段 > 行内 ``_口径`` 标记 > 东财十大股东。
+
+    ``holders_caliber`` 由 main.py 在 holders 收口点统一写入，是首选来源；
+    其余分支用于兼容历史 profile（字段未落库时仍能正确识别，不再回退到「猜」）。
+    """
+    if not gov:
+        return ""
+    explicit = str(gov.get("holders_caliber") or "")
+    if explicit:
+        return explicit
+    if gov.get("report_holders"):
+        return HOLDER_CALIBER_ROSTER
+    rows = gov.get("holders") or []
+    if not rows:
+        return ""
+    if any(str((r or {}).get("_口径") or "") == "流通股东" for r in rows):
+        return HOLDER_CALIBER_FREE
+    return HOLDER_CALIBER_TOP10
+
+
+def holders_title(caliber: str) -> str:
+    """表头必须与口径一致：流通口径不得写成「前十大股东」。"""
+    return "前十大流通股东" if caliber == HOLDER_CALIBER_FREE else "前十大股东"
 
 
 def _cjk_bigrams(text: str) -> set[str]:
@@ -619,12 +659,14 @@ def empty_overview_data() -> dict:
         # 核心结论
         "conclusion_html": "（AI 内容生成失败或跳过，已降级为空壳；报告其余部分不受影响）",
         "conclusion_note": "",
+        "conclusion_title": "",
 
         # 01 身份识别
         "id_metrics": [],
         "id_kv_left": [],
         "id_kv_right": [],
         "id_insight_html": "",
+        "id_insight_title": "",
 
         # 02 业务画像
         "seg_mix": {"labels": [], "values": []},
@@ -634,10 +676,13 @@ def empty_overview_data() -> dict:
         "seg_gap": {"labels": [], "income_pct": [], "profit_pct": []},
         "seg_gap_note": "",
         "business_flag_html": "",
+        "business_flag_title": "",
         "seg_trend": [],
         "seg_trend_labels": [],
         "seg_trend_cols": [],
         "seg_trend_note": "",
+        "seg_trend_title": "",
+        "seg_trend_has_h1": False,
         "seg_trend_summary_html": "",
         "self_dev": {"labels": [], "revenue": [], "margin": []},
         "self_dev_note": "",
@@ -650,9 +695,19 @@ def empty_overview_data() -> dict:
         "partners": [],
         "partners_note": "",
         "upstream_struct": [],
+        "upstream_struct_has_suppliers": False,
         "downstream_quotes": [],
         "downstream_fields": [],
         "bc_source": "",
+        # 上下游/合作网络标题与导语动态化（因公司而异；空值时模板回退通用话术）
+        "upstream_title": "",
+        "upstream_intro": "",
+        "upstream_struct_title": "",
+        "upstream_struct_intro": "",
+        "downstream_title": "",
+        "downstream_intro": "",
+        "partners_title": "",
+        "partners_intro": "",
         "growth": [],
         "business_constraints": [],
         "growth_source": "",
@@ -661,6 +716,7 @@ def empty_overview_data() -> dict:
         # 03 股权治理
         "shareholders": [],
         "shareholders_period": "",
+        "shareholders_title": "前十大股东",
         "gov_note": "",
         "div_metrics": [],
         "div_text": "",
@@ -1297,6 +1353,161 @@ def _build_biz_enrich(bc: dict, use_llm: bool = True) -> dict:
         return empty
 
 
+# 公开信息补位每类条数上限（防 LLM 铺量）
+_PUBLIC_MAX_ROWS = 6
+
+
+def _public_entity_check(parsed: dict, up_cats: set[str], down_fields: set[str]) -> dict:
+    """公开信息补位护栏：类别名须来自输入、企业名须为具名实体、禁精确数字。
+
+    与 `_biz_enrich_check` 的本质区别：公开信息**无原文可校验**，因此换一套
+    可机检的约束——① `field`/`category` 必须逐字复用输入（防自创产业环节）；
+    ② 企业名拆分后每条须非泛称、长度合理（防「多家头部企业」这类空转）；
+    ③ 整条不得出现精确数字（份额/金额/订单量一律禁止，这是幻觉高发区）；
+    ④ 每类条数设上限，防 LLM 铺量。
+    """
+
+    def _names_ok(blob: object) -> str:
+        keep: list[str] = []
+        for part in re.split(r"[、，,/；]|以及|及", str(blob or "")):
+            p = part.strip(" （）()。、，,·・")
+            if not (2 <= len(p) <= 24) or is_generic_entity(p):
+                continue
+            if p not in keep:
+                keep.append(p)
+        return "、".join(keep[:5])
+
+    def _no_number(blob: object) -> bool:
+        # 三位以上数字串视为精确数字（「3M」这类单字符数字不受影响）
+        return not re.search(r"\d[\d,\.]{2,}", str(blob or ""))
+
+    out: dict = {"upstream": [], "downstream": [], "partners": []}
+    # —— 上游代表企业：category 必须逐字复用手抽类别 ——
+    for r in (parsed.get("upstream") or [])[:_PUBLIC_MAX_ROWS]:
+        if not isinstance(r, dict):
+            continue
+        cat = str(r.get("category") or "").strip()
+        if cat not in up_cats:
+            continue
+        names = _names_ok(r.get("names"))
+        if not names or not _no_number(names):
+            continue
+        out["upstream"].append({
+            "category": cat,
+            "names": names,
+            "basis": str(r.get("basis") or "").strip()[:60],
+            "src": "public",
+        })
+    # —— 下游代表客户：field 必须逐字复用已定稿领域 ——
+    for r in (parsed.get("downstream") or [])[:_PUBLIC_MAX_ROWS]:
+        if not isinstance(r, dict):
+            continue
+        field = str(r.get("field") or "").strip()
+        if field not in down_fields:
+            continue
+        names = _names_ok(r.get("customers"))
+        if not names or not _no_number(names):
+            continue
+        out["downstream"].append({
+            "field": field,
+            "customers": names,
+            "basis": str(r.get("basis") or "").strip()[:60],
+            "src": "public",
+        })
+    # —— 代表性合作方：补充泛称条目对应的具体公司（或无一手合作方时的行业公认伙伴）——
+    for r in (parsed.get("partners") or [])[:_PUBLIC_MAX_ROWS]:
+        if not isinstance(r, dict):
+            continue
+        names = _names_ok(r.get("partner"))
+        content = str(r.get("content") or "").strip()
+        if not names or not _no_number(content) or not content:
+            continue
+        out["partners"].append({
+            "partner": names,
+            "relation": str(r.get("relation") or "公开信息 · 待核实").strip()[:40],
+            "content": content[:160],
+            "src": "public",
+        })
+    return out
+
+
+def _build_public_entities(bc: dict, seed: dict, use_llm: bool = True) -> dict:
+    """基于公开产业信息补位「代表性企业」名单（非一手来源·待核实）。
+
+    背景：定期报告普遍不点名客户/供应商（实测 601138 半年报 221 页仅一处具名
+    合作方，002384 全篇无具名客户），一手抽取无法满足「列举具体公司」的阅读需求。
+    本通道在**明确标注非一手来源**的前提下，由聚焦 LLM 依据公开产业常识补充业内
+    公认的代表企业，与一手数据分层展示（一手行在前、公开信息补位行在后并加标记）。
+
+    seed 为已定稿的一手结果（上游类别 / 下游领域 / 泛称合作方），用于约束 LLM
+    只能在这些环节内补名，不得自创。
+    """
+    empty: dict = {"upstream": [], "downstream": [], "partners": []}
+    if not use_llm:
+        return empty
+    up_cats = {
+        str(u.get("category") or "").strip()
+        for u in (seed.get("upstream_struct") or [])
+        if str(u.get("category") or "").strip()
+    }
+    down_fields = {
+        str(d.get("field") or "").strip()
+        for d in (seed.get("downstream") or [])
+        if str(d.get("field") or "").strip()
+    } - {"整体客户分布"}
+    _generic_partners = [
+        str(p.get("partner") or "").strip()
+        for p in (seed.get("partners") or [])
+        if p.get("named") is False and str(p.get("partner") or "").strip()
+    ]
+    if not (up_cats or down_fields or _generic_partners):
+        return empty
+
+    # 触发闸：仅当确实存在「没有具体公司名」的缺口时才调用 LLM（额度敏感）。
+    # 缺口 = 下游某领域一手客户全为泛称 / 存在泛称合作口径 / 上游仅有类别无企业。
+    def _all_generic(cust: str) -> bool:
+        _names = [x.strip(" 、，,()") for x in re.split(r"[、，,]", str(cust or "")) if x.strip()]
+        return bool(_names) and all(is_generic_entity(n) for n in _names)
+
+    _has_gap = (
+        any(_all_generic(str(d.get("customers") or "")) for d in (seed.get("downstream") or []))
+        or bool(_generic_partners)
+        or bool(up_cats)
+    )
+    if not _has_gap:
+        return empty
+    facts = (
+        f"【公司】{seed.get('name') or ''}（{seed.get('code') or ''}）\n"
+        f"【标签】{'、'.join(str(b) for b in (seed.get('badges') or []))}\n"
+        f"【上游类别（逐字复用，不得改字）】{'、'.join(sorted(up_cats)) or '（无）'}\n"
+        f"【下游应用领域（逐字复用，不得改字）】{'、'.join(sorted(down_fields)) or '（无）'}\n"
+        "【定期报告中的泛称合作口径（请补充其对应的业内公认具体公司）】"
+        f"{'、'.join(_generic_partners) or '（无）'}\n"
+    )
+    try:
+        system = load_prompt("biz_public")
+        resp = get_router().complete(
+            LLMRequest(system=system, user=facts, max_tokens=1600)
+        ).text
+        parsed = _parse_overview_json(resp)
+        if not parsed:
+            logger.warning("[overview] 公开信息补位：LLM 输出无法解析，跳过")
+            return empty
+        filtered = _public_entity_check(parsed, up_cats, down_fields)
+        _n = sum(len(v) for v in filtered.values())
+        if not _n:
+            logger.warning("[overview] 公开信息补位：无任何条目通过护栏，跳过")
+            return empty
+        logger.info(
+            "[overview] 公开信息补位：upstream=%s downstream=%s partners=%s（均标注非一手来源）",
+            len(filtered["upstream"]), len(filtered["downstream"]), len(filtered["partners"]),
+        )
+        return filtered
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[overview] 公开信息补位调用异常：%s", e)
+        return empty
+
+
 def _build_growth(profile_dict: dict, use_llm: bool = True) -> tuple[list[dict], list[str], str]:
     """编排增长分析：聚焦 LLM 子调用 → 校验 → 数据层兜底；返回 (growth, constraints, source)。
 
@@ -1622,12 +1833,13 @@ def _build_narrative_fallbacks(profile_dict: dict) -> dict:
     if not market_logic:
         market_logic.append("（数据层未取到足以归纳市场逻辑的结构化信息；详见上下游与财务速写模块。）")
 
-    business_flag_html = _build_seg_divergence_flag(segs)
+    business_flag_html, business_flag_title = _build_seg_divergence_flag(segs)
     business_cross_html = _build_business_cross(_bc, segs, top)
     return {
         "moat": moat,
         "market_logic": market_logic,
         "business_flag_html": business_flag_html,
+        "business_flag_title": business_flag_title,
         "business_cross_html": business_cross_html,
     }
 
@@ -1970,22 +2182,49 @@ def _build_layer_fallbacks(profile_dict: dict) -> dict:
     # 03 股份回购：真值取自年报一手来源（profile.repurchase，由 main.py 注入）。
     # 背景：schema 里 repurchase 字段此前从未被填充，LLM 凭记忆编造「回购 12,425,123 股」；
     # 年报权威值为已回购 2,979,800 股（约 297.98 万股），用于注销并减少注册资本。
+    # 渲染位置：「分红与股东回报」区块内（回购属股东回报，与分红同节展示）。
     _rp = gov.get("repurchase")
-    if isinstance(_rp, dict) and _rp.get("executed_shares"):
+    if isinstance(_rp, dict) and (
+        _rp.get("executed_shares") or _rp.get("esop_transfer") or _rp.get("h1_cash_spent_yi")
+    ):
         _rpwan = _to_f(_rp.get("executed_shares_wan"))
         out["repurchase_text"] = _rp.get("text") or ""
-        out["repurchase_metrics"] = [
-            {
+        _rp_year = str(_rp.get("year") or "").strip()
+        # 来源措辞随抽取结果走：半年报数据覆盖年报时若仍标「年报一手来源」，
+        # 会出现「2026 年实施·年报一手来源」这类自相矛盾的标注。
+        _rp_src = str(_rp.get("source") or "定期报告")
+        _rp_metrics: list[dict] = []
+        if _rp.get("executed_shares"):
+            _rp_metrics.append({
                 "lab": "已回购股数",
-                "val": f"{_rpwan:.2f} 万股" if _rpwan is not None else "—",
-                "note": f"{_rp.get('year', '—')} 年已实施",
-            },
-            {
+                "val": (
+                    f"{_rpwan:.2f} 万股"
+                    if _rpwan is not None
+                    else f"{int(_rp['executed_shares']):,} 股"
+                ),
+                "note": (
+                    f"{_rp_year} 年实施·{_rp_src}一手来源"
+                    if _rp_year
+                    else f"{_rp_src}一手来源"
+                ),
+            })
+            _rp_metrics.append({
                 "lab": "回购用途",
                 "val": _rp.get("purpose") or "—",
-                "note": (f"完成于 {_rp['completed_date']}" if _rp.get("completed_date") else ""),
-            },
-        ]
+                "note": (
+                    f"完成于 {_rp['completed_date']}"
+                    if _rp.get("completed_date")
+                    else f"{_rp_src}披露口径"
+                ),
+            })
+        elif _rp.get("esop_transfer"):
+            _et = _rp["esop_transfer"]
+            _rp_metrics.append({
+                "lab": "最新回购进展",
+                "val": f"{int(_et.get('shares') or 0):,} 股",
+                "note": f"{_et.get('date') or '—'} 过户员工持股计划",
+            })
+        out["repurchase_metrics"] = _rp_metrics
 
     # 03 实际控制人：真值取自年报「前十大股东」一手来源（profile.actual_controller）。
     #
@@ -2164,14 +2403,19 @@ def _build_layer_fallbacks(profile_dict: dict) -> dict:
 
 
 
-def _build_seg_divergence_flag(segs: list[dict]) -> str:
-    """从真实分部数据计算「收入占比 vs 利润占比」错位：高毛利板块利润贡献高于收入占比。"""
+def _build_seg_divergence_flag(segs: list[dict]) -> tuple[str, str]:
+    """从真实分部数据计算「收入占比 vs 利润占比」错位；返回 (正文 HTML, 标题)。
+
+    标题按各公司实际分部名生成（原为模板写死的「关键发现：收入占比与利润贡献的错位」），
+    正文中的板块名一律取自数据，不再硬编码「分销主业」等特定公司话术。
+    """
     _with_pp = [s for s in segs if s.get("profit_pct") is not None and s.get("pct") is not None]
     if not _with_pp:
-        return ""
+        return "", ""
     _ranked = sorted(_with_pp, key=lambda s: (s["profit_pct"] - s["pct"]), reverse=True)
     _best, _worst = _ranked[0], _ranked[-1]
     parts: list[str] = []
+    title = ""
     _gap_best = _best["profit_pct"] - _best["pct"]
     if _gap_best > 0.5:
         _m = f"（毛利率 {_best['margin']:.2f}%）" if _best.get("margin") is not None else ""
@@ -2179,15 +2423,17 @@ def _build_seg_divergence_flag(segs: list[dict]) -> str:
             f"{_best['name']} 收入占比 {_best['pct']:.2f}%、利润占比 {_best['profit_pct']:.2f}%，"
             f"利润贡献高于收入占比约 {_gap_best:.1f} 个百分点，是利润结构中的高毛利引擎{_m}。"
         )
+        title = f"关键发现：{_best['name']}利润贡献跑赢收入占比"
     if _worst is not _best and (_worst["pct"] - _worst["profit_pct"]) > 0.5:
         _gap_worst = _worst["pct"] - _worst["profit_pct"]
         parts.append(
             f"反观 {_worst['name']} 收入占比 {_worst['pct']:.2f}% 但利润占比仅 {_worst['profit_pct']:.2f}%，"
-            f"低毛利分销主业对整体利润形成稀释（Δ {_gap_worst:.1f} 个百分点）。"
+            f"这类板块对整体利润形成稀释（Δ {_gap_worst:.1f} 个百分点）。"
         )
+        title = title or f"关键发现：{_worst['name']}收入占比大但利润贡献薄"
     if not parts:
-        return ""
-    return "<p>" + "".join(parts) + "</p>"
+        return "", ""
+    return "<p>" + "".join(parts) + "</p>", title
 
 
 def _build_seg_trend_summary(
@@ -2266,7 +2512,7 @@ def _build_seg_trend_summary(
                     f"<strong>结果是占比倒退：</strong>在整体营收变化的背景下，"
                     f"{dom_name}占比从 {dom_first:.2f}% 升到 {dom_last:.2f}%，"
                     f"{high_name}从 {high_first:.2f}% 降到 {high_last:.2f}%。"
-                    "高毛利业务的占比不升反降，公司离「双核心」更远了。"
+                    f"高毛利业务的占比不升反降，{dom_name}与{high_name}的规模差进一步拉大。"
                 )
 
     # 4) 研发投入
@@ -2280,9 +2526,18 @@ def _build_seg_trend_summary(
     bullets = margin_bullets + revenue_bullets + share_bullets + rd_bullets
     if not bullets:
         return ""
+    # 标题按实际发现的矛盾组合生成（原写死「战略与现实的落差」）
+    if margin_bullets and revenue_bullets:
+        title = f"战略与现实：{self_dev_name}毛利率在改善，收入却在失速"
+    elif margin_bullets:
+        title = f"战略与现实：{self_dev_name}在改善"
+    elif revenue_bullets:
+        title = f"战略与现实：{self_dev_name}增长失速"
+    else:
+        title = f"战略与现实：{self_dev_name}的结构性落差"
     # 每个 bullet 单独一个 <p>；不要嵌套 <p><p>，也不要提前多出一个 </p>
     inner = "".join(f"<p>{b}</p>" for b in bullets)
-    return f'<div class="flag"><div class="t">战略与现实的落差</div>{inner}</div>'
+    return f'<div class="flag"><div class="t">{title}</div>{inner}</div>'
 
 
 def _build_customer_table_fallback(bc: dict, period: str = "") -> list[dict]:
@@ -2423,6 +2678,10 @@ def _customer_table_check(rows, bc: dict) -> bool:
     for r in rows:
         if not isinstance(r, dict):
             return False
+        # 契约表禁止自带 public 标记：那是系统「公开信息补位」通道的专属标记，
+        # 模型自行添加等同绕过原文校验（等同于编造客户名），整表拒绝
+        if str(r.get("src") or "").strip().lower() == "public":
+            return False
         cust = str(r.get("customers") or "")
         if not cust:
             return False
@@ -2457,9 +2716,58 @@ def _partners_check(rows, bc: dict) -> bool:
         if not isinstance(r, dict):
             return False
         pn = re.sub(r"\s+", "", str(r.get("partner") or ""))
+        # 同 _customer_table_check：契约表自带 public 标记即视为绕过校验
+        if str(r.get("src") or "").strip().lower() == "public":
+            return False
         if len(pn) < 2 or pn not in corpus:
             return False
     return True
+
+
+def _dedupe_partner_rows(rows: list[dict]) -> list[dict]:
+    """合作方「名单级」去重 + 具名优先排序。
+
+    同一句合作关系可能被三条路径同时抓到（LLM 契约表给「英伟达、思灵机器人」，
+    AI 增量又拆成「英伟达」「思灵机器人」两行），按整串判重会漏，必须按名单
+    拆分后逐个公司判重。排序让具名公司（一手 → 公开信息补位）排在泛称口径之前，
+    读者先看到具体公司，泛称原文口径（标记「原文未具名」）置后。
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        parts = [
+            x for x in re.split(r"[、，,]", str(r.get("partner") or "")) if x.strip()
+        ]
+        keep = [x for x in parts if re.sub(r"\s+", "", x) not in seen]
+        if not keep:
+            continue
+        seen |= {re.sub(r"\s+", "", x) for x in keep}
+        _r = dict(r)
+        _r["partner"] = "、".join(keep)
+        out.append(_r)
+    out.sort(
+        key=lambda r: (
+            2 if not r.get("named", True) else (1 if r.get("src") == "public" else 0)
+        )
+    )
+    return out
+
+
+def _clean_up_category(cat: object) -> str:
+    """清洗上游类别名：去关系后缀与方位/主体前缀。
+
+    LLM 增量提取常把「关系」混进类别名（实测得到「上游供应链 · 紧密合作」），
+    既不适合做表格分类，进标题也会变成「上游：上游供应链 · 紧密合作」这种
+    重复表述，这里统一归一为产业环节名。
+    """
+    c = str(cat or "").strip()
+    # 仅按间隔号切（「上游供应链 · 紧密合作」）；「/」是类别内部并列（「关键品类/技术」），
+    # 不可作为分隔符
+    c = re.split(r"[·・]", c)[0].strip()
+    c = re.sub(r"^(上游|下游|本公司|公司)", "", c).strip()
+    return c.strip("、，,（）() ") or "供给合作"
 
 
 def _build_business_cross(bc, segs, top) -> str:
@@ -2767,6 +3075,25 @@ def build_overview_data(
     if llm_json:
         # 先拦截把提示词示例原样回显为内容的字段（等同编造），再进入合并。
         llm_json, _ = _sanitize_llm_json(llm_json)
+        # 阵营表（upstream）只允许年报一手来源（chain 抽取）生成：LLM 不掌握
+        # 授权代理名单，其填写的 upstream 实为供应商依赖关系，会误触发模板
+        # 分销商版式（实测 002384 被写成「光芯片—索尔思光电」阵营行，连带
+        # 渲染出写死的「代理权是分销商的生命线」话术）。
+        if llm_json.pop("upstream", None):
+            logger.warning(
+                "[overview] 契约 upstream 字段已丢弃（阵营表仅限年报一手来源）"
+            )
+        # 页眉系统字段（报告日期 / 数据时点说明）由系统生成：契约曾把
+        # report_date 列为可填字段，模型会把输入数据里主营构成的「报告日期」
+        # （如 2025-12-31）当成本报告日期回填，导致页眉日期与生成时间不符
+        # （实测 601138）。此处整体丢弃，最终由数据层无条件写回生成当日。
+        _sys_dropped = [
+            k for k in ("report_date", "as_of_text") if llm_json.pop(k, None)
+        ]
+        if _sys_dropped:
+            logger.warning(
+                "[overview] 契约系统字段已丢弃（由系统生成）：%s", "、".join(_sys_dropped)
+            )
         # 仅覆盖契约内已知键，避免 LLM 多余字段污染
         for k, v in llm_json.items():
             if k in data:
@@ -2925,6 +3252,10 @@ def build_overview_data(
             )
         data[_k] = _fb.get(_k)
 
+    # 错位 flag 的标题：由数据层按分部名生成（原为模板写死话术），随正文同源
+    if not data.get("business_flag_title"):
+        data["business_flag_title"] = _fb.get("business_flag_title") or ""
+
     # P1：年报一手来源——上下游（PyMuPDF 解析，带页码归因）。以数据为准覆盖 LLM 可能
     # 漏返的字段；并将原本「非一手来源·待核实」的定性彻底改为一手来源标注。
     _bc = (
@@ -3023,6 +3354,27 @@ def build_overview_data(
                     "「主供品类」为按年报授权品类与授权证书段落归纳的口径，非逐家披露。"
                     "代理权是分销商的核心壁垒，原厂资质与产品线广度决定其上游话语权。"
                 )
+                # 上游标题/导语动态化：阵营数、原厂家数、领衔阵营全部取自
+                # 该公司年报抽取结果（count 为抽取到的原厂总数，含未逐一列示部分）。
+                _camp_total = sum(r.get("count", 0) for r in _camp)
+                _camp_names = [r["camp"] for r in _camp]
+                if _camp_names and _camp_total:
+                    _lead = _camp_names[0]
+                    data["upstream_title"] = (
+                        f"上游：{_lead}领衔的{_camp_total}家原厂代理版图"
+                        if len(_camp_names) > 1
+                        else f"上游：{_lead}的{_camp_total}家原厂代理版图"
+                    )
+                    _camps_txt = (
+                        f"{'、'.join(_camp_names)} {len(_camp_names)} 大阵营"
+                        if len(_camp_names) > 1
+                        else f"{_camp_names[0]}阵营"
+                    )
+                    data["upstream_intro"] = (
+                        f"代理权是分销商的生命线。公司代理 {_camp_total} 家国内外原厂，"
+                        f"覆盖{_camps_txt}，按阵营与品类拆分如下"
+                        "（一手来源：定期报告「释义 / 主营业务」章节列示的授权代理原厂品牌）："
+                    )
 
         # 供应商集中度改在下游模块统一渲染（与客户集中度对称，且需支持
         # annual_supplement 回补时点），此处不再重复渲染。
@@ -3068,6 +3420,9 @@ def build_overview_data(
                     "partner": str(p.get("partner") or ""),
                     "relation": str(p.get("relation") or "深度合作"),
                     "content": str(p.get("content") or ""),
+                    "named": not is_generic_entity(str(p.get("partner") or "")),
+                    "src": "",
+                    "basis": "",
                 }
                 for p in _llm_parts
                 if isinstance(p, dict) and p.get("partner")
@@ -3081,6 +3436,13 @@ def build_overview_data(
                     "partner": str(p.get("partner") or ""),
                     "relation": str(p.get("relation") or ""),
                     "content": str(p.get("content") or ""),
+                    # 数据层已按「具名/泛称」拆分（partner 为泛称时 named=False）；
+                    # 旧缓存无该键时按 is_generic_entity 兜底判定，避免泛称口径
+                    # 被当成具体公司展示
+                    "named": bool(p.get("named", True))
+                    and not is_generic_entity(str(p.get("partner") or "")),
+                    "src": "",
+                    "basis": "",
                 }
                 for p in (_bc.get("partnerships") or [])
                 if p.get("partner")
@@ -3120,10 +3482,16 @@ def build_overview_data(
                         "partner": str(_ep.get("partner") or ""),
                         "relation": str(_ep.get("relation") or "战略合作"),
                         "content": str(_ep.get("content") or ""),
+                        "named": not is_generic_entity(str(_ep.get("partner") or "")),
+                        "src": "",
+                        "basis": "",
                         "ai": True,
                     })
                     _have.add(_pn)
         if data.get("partners"):
+            # 名单级去重 + 具名优先排序：消除跨路径重复（契约表「英伟达、思灵机器人」
+            # 与 AI 增量拆出的「英伟达」「思灵机器人」并存）
+            data["partners"] = _dedupe_partner_rows(data["partners"])
             _n_ai = sum(1 for p in data["partners"] if p.get("ai"))
             _tail = (
                 f"其中 {_n_ai} 条为 AI 从报告原文证据句中受约束提取（quote 已校验），请以原始披露为准。"
@@ -3131,6 +3499,31 @@ def build_overview_data(
             )
             if data.get("partners_note"):
                 data["partners_note"] += _tail
+            # 合作网络标题/导语动态化：合作方名单取自最终定稿的 partners 行。
+            # 标题优先具名公司（泛称口径如「全球主要客户」仅作兜底），避免出现
+            # 「深度合作网络：全球多家头部客户」这类零信息量表述。
+            _pn_all = [
+                str(p.get("partner") or "").strip()
+                for p in data["partners"]
+                if p.get("partner")
+            ]
+            _pn_names = [
+                str(p.get("partner") or "").strip()
+                for p in data["partners"]
+                if p.get("partner") and p.get("named", True)
+            ] or _pn_all
+            _pn_names = [n for n in _pn_names if n]
+            if _pn_names:
+                _pn_head = "、".join(_pn_names[:3])
+                data["partners_title"] = (
+                    f"深度合作网络：{_pn_head} 等 {len(_pn_names)} 家合作方"
+                    if len(_pn_names) > 3
+                    else f"深度合作网络：{_pn_head}"
+                )
+                data["partners_intro"] = (
+                    f"合作网络是业务模式的直接证据。下列 {len(_pn_names)} 条合作方与"
+                    "合作关系均取自公司定期报告的一手披露："
+                )
 
         # 下游表增量行：LLM downstream_detail 并入（field+customers 去重）
         _extra_dw = _enrich.get("downstream_extra") or []
@@ -3159,15 +3552,24 @@ def build_overview_data(
         # 类别级行呈现上游模块（不再是完全置空），仍以原文 quote 为据。
         _extra_up = _enrich.get("upstream_struct") or []
         if _extra_up and not data.get("upstream"):
-            data["upstream_struct"] = [
-                {
-                    "category": str(u.get("category") or ""),
-                    "detail": str(u.get("detail") or ""),
+            # 类别级去重：LLM 常对同一环节输出多行（detail 不同、类别名相同），
+            # 不去重会让表格与标题出现「供应链及制造服务、供应链及制造服务」这类重复
+            _seen_up_cat: set[str] = set()
+            _up_rows: list[dict] = []
+            for _u in _extra_up:
+                if not _u.get("category"):
+                    continue
+                _cat = _clean_up_category(_u.get("category"))
+                if _cat in _seen_up_cat:
+                    continue
+                _seen_up_cat.add(_cat)
+                _up_rows.append({
+                    "category": _cat,
+                    "detail": str(_u.get("detail") or ""),
                     "ai": True,
-                }
-                for u in _extra_up
-                if u.get("category")
-            ]
+                })
+            if _up_rows:
+                data["upstream_struct"] = _up_rows
 
         # 下游客户表（应用领域 → 代表客户 → 表现 → 数据期）：
         # 数据源时效优先：最新半年报为主期，年报为补充期（半年报下游章节更简略，
@@ -3203,6 +3605,28 @@ def build_overview_data(
                 ]
             if _rows_all:
                 data["downstream"] = _rows_all
+
+        # 下游标题/导语动态化：应用领域取自最终定稿的下游行（LLM/数据层兜底
+        # + AI 增量行均已并入），按该公司实际覆盖领域生成。
+        if data.get("downstream"):
+            _dw_fields = [
+                str(r.get("field") or "").strip()
+                for r in data["downstream"]
+                if r.get("field")
+            ]
+            _dw_fields = [f for f in _dw_fields if f]
+            if _dw_fields:
+                data["downstream_title"] = (
+                    f"下游：{_dw_fields[0]}等{len(_dw_fields)}大应用领域"
+                    if len(_dw_fields) > 1
+                    else f"下游：{_dw_fields[0]}"
+                )
+                _dw_head = "、".join(_dw_fields[:4])
+                data["downstream_intro"] = (
+                    f"客户网络是第二资产。客户覆盖{_dw_head}"
+                    f"等 {len(_dw_fields)} 个应用领域"
+                    "（基于年报披露的客户名单动态归纳）："
+                )
 
         # 客户/供应商集中度：半年报不披露该表，回用年报（annual_supplement）真值，
         # 并按实际披露期注明时点。数字全部来自定期报告原文，LLM 不参与。
@@ -3299,6 +3723,30 @@ def build_overview_data(
                     len(_up_rows),
                 )
 
+        # 上游供给结构标题/导语动态化（非分销商分支）：类别取自最终定稿行
+        # （LLM 增量提取或数据层确定性兜底均已并入），按该公司实际供给类别生成。
+        if data.get("upstream_struct") and not data.get("upstream"):
+            _us_cats = [
+                _clean_up_category(u.get("category"))
+                for u in data["upstream_struct"]
+                if u.get("category")
+            ]
+            _us_cats = [c for c in _us_cats if c]
+            if _us_cats:
+                _us_n = len(_us_cats)
+                data["upstream_struct_title"] = (
+                    f"上游：{'、'.join(_us_cats[:2])}等{_us_n}类供给结构"
+                    if _us_n > 2
+                    else f"上游：{'、'.join(_us_cats)}"
+                )
+                data["upstream_struct_intro"] = (
+                    f"该公司不属于授权分销模式，上游涵盖{'、'.join(_us_cats)}"
+                    f"等 {_us_n} 类供给/合作关系，以下内容提取自定期报告原文："
+                    if _us_n > 1
+                    else f"该公司不属于授权分销模式，上游供给与合作关系包括"
+                    f"{_us_cats[0]}（一手来源：定期报告披露），以下内容提取自原文："
+                )
+
     # OV-5：_bc 为空（无年报上下游数据）时 enrich 预取不会被消费——在此统一回收，
     # 避免 ThreadPoolExecutor 非守护线程拖住进程退出。
     if _enrich_ex is not None:
@@ -3364,9 +3812,15 @@ def build_overview_data(
 
     def _seg_f(x):
         try:
-            return float(x)
+            v = float(x)
         except (TypeError, ValueError):
             return None
+        # NaN / ±Infinity 不是有效数值（东财部分期次毛利率为空时落成 nan，经
+        # json 往返仍是 float('nan')）。必须归一为 None，否则会污染分部趋势的
+        # 收入加权毛利率与合计（实测渲染成「nan%」）。
+        if v != v or v in (float("inf"), float("-inf")):
+            return None
+        return v
 
     if _segs_raw:
         _dates = sorted({_seg_date_key(r) for r in _segs_raw if _seg_date_key(r)})
@@ -3399,9 +3853,23 @@ def build_overview_data(
                 })
             data["segments"] = _shaped
             _labels = [s["name"] for s in _shaped]
-            _inc = [float(s["pct"].rstrip("%")) for s in _shaped]
-            _prof = [float(s["profit_pct"].rstrip("%"))
-                     for s in _shaped if s["profit_pct"] != "—"]
+
+            def _pct_f(sv: str) -> float | None:
+                """把 '12.34%' 解析为 12.34；空串/占位符（'—'）返回 None。
+
+                东财偶尔整列缺「收入比例」（全为 None → 这里的 ''），旧写法
+                `float(s["pct"].rstrip('%'))` 会直接抛 ValueError，把整个报告装配
+                打断（不是在渲染层局部降级）。故此处改为 None 安全解析（2026-09-16）。
+                """
+                s = str(sv).strip().rstrip("%")
+                try:
+                    return float(s)
+                except (TypeError, ValueError):
+                    return None
+
+            # 与 _labels 等长：缺值补 0.0（图表不崩、不越界），真实值照常。
+            _inc = [_pct_f(s["pct"]) or 0.0 for s in _shaped]
+            _prof = [v for v in (_pct_f(s["profit_pct"]) for s in _shaped) if v is not None]
             data["seg_mix"] = {"labels": _labels, "values": _inc}
             data["seg_gap"] = {
                 "labels": _labels, "income_pct": _inc, "profit_pct": _prof,
@@ -3428,8 +3896,22 @@ def build_overview_data(
     #    「结构模块器(模组)」这类同义漂移；
     # 3) 拒绝分类体系确实不同的报告期——宁可少列期数，不硬凑。
     if _segs_raw:
+        def _is_subrow(name) -> bool:
+            """是否为「其中:XXX」形式的**子行**（明细拆分），而非独立产品线。
+
+            东财主营构成会把某个父级科目的明细以「其中:销售产品收入及其他」这类
+            行并列返回，与父行**同值**。把它们与父行一起计入趋势合计会重复计数：
+            实测中国移动（600941）2023 年「其他(补充)」1457.95 亿 + 「其中:销售
+            产品收入及其他」1457.95 亿 → 合计虚高到 11551.04 亿（真实 10093.09 亿）。
+            子行的信息量已被父行覆盖，故仅把它们排除出**趋势归并**（不影响
+            「业务板块全景」表的原样展示）。2026-09-16 修复。
+            """
+            s = "".join(str(name).split())
+            return bool(re.match(r"^其中[:：]", s))
+
         _prod_all = [
-            r for r in _segs_raw if str(r.get("分类类型", "")) == "按产品分类"
+            r for r in _segs_raw
+            if str(r.get("分类类型", "")) == "按产品分类" and not _is_subrow(r.get("主营构成"))
         ]
         _all_dates = sorted({_seg_date_key(r) for r in _prod_all if _seg_date_key(r)})
 
@@ -3463,9 +3945,22 @@ def build_overview_data(
             if not ka or not kb:
                 return 0.0
             inter = len(ka & kb)
-            if inter == 0:
-                return 0.0
-            return inter / max(len(ka), len(kb))
+            if inter > 0:
+                return inter / max(len(ka), len(kb))
+            # 词级关键词无交集时退用字符 2-gram 相似度：跨期改名常是缩写/省略
+            # （实测 002384：「触控面板及液晶显示模组」→「光电显示模组」，公共
+            # 2-gram 显示/示模/模组，相似度 0.6），词级判死会拖垮整期匹配率、
+            # 把 2023/2024 年报整期剔除（标题「三年」只剩一期）。
+            # 阈值 0.34：要求短名侧约 1/3 以上 2-gram 重合；「光模块」vs
+            # 「LED显示器件」2-gram 交集为 0 不误伤——新业务与旧业务是并存
+            # 更替而非改名，不许跨期拼接。
+            ga = {sa[i:i + 2] for i in range(len(sa) - 1)}
+            gb = {sb[i:i + 2] for i in range(len(sb) - 1)}
+            if ga and gb:
+                g_score = len(ga & gb) / min(len(ga), len(gb))
+                if g_score >= 0.34:
+                    return g_score
+            return 0.0
 
         def _find_seg_rec(target_name, date_rows):
             """在 date_rows 中找到与 target_name 最匹配的主营构成记录。"""
@@ -3476,6 +3971,79 @@ def build_overview_data(
                     best_score = score
                     best = r
             return best if best_score >= 0.3 else None
+
+        def _mg_of(x):
+            """毛利率：优先取接口「毛利率」列；缺失（东财部分板块/期次
+            系统性为空，如「其他(补充)」）时用 (收入−成本)/收入 自算，
+            与 05 财务速写的毛利率自算口径一致——避免趋势图折线整段为空。"""
+            mg = _seg_f(x.get("毛利率"))
+            if mg is not None:
+                return mg
+            rev = _seg_f(x.get("主营收入"))
+            cost = _seg_f(x.get("主营成本"))
+            if rev is not None and cost is not None and rev != 0:
+                return (rev - cost) / rev
+            return None
+
+        def _period_agg(d: str) -> dict:
+            """把某期「按产品分类」的全部产品段归类到基准期产品名并求和。
+
+            为什么不能只取「最优单段」（旧实现）：中际旭创 2023 年报把光通信业务
+            拆成「高速光通信模块 / 中低速光通信模块」两段，二者与基准名「光通信
+            收发模块」的匹配得分**并列 0.5**——旧实现遇到并列只取先出现的「高速」，
+            漏掉「中低速」3.83 亿，导致 2023 列合计 97.99 亿 ≠ 当期真实营收 107.18 亿。
+            改为**逐段归并**：每个历史段按最高得分归到唯一一个基准名（避免重复计数），
+            同名多段求和；得分为 0 的非残差段（2023「汽车光电子」「光组件」）并入
+            基准期的「其他」行，与其自身归类口径一致；残差 / 技术性科目（分部间抵销、
+            平衡项目）不参与，避免虚增合计。
+
+            返回 ``{基准名: {"rev": 收入合计, "margin": 加权毛利率}}``。
+            """
+            acc: dict[str, dict] = {}
+            for r in _prod_all:
+                if _seg_date_key(r) != d:
+                    continue
+                nm = r.get("主营构成", "")
+                rev = _seg_f(r.get("主营收入"))
+                if rev is None:
+                    continue
+                best_name, best_score = "", 0.0
+                for bn in _latest_names:
+                    sc = _seg_match_score(nm, bn)
+                    if sc > best_score:
+                        best_score, best_name = sc, bn
+                if best_score >= 0.3:
+                    tgt = best_name
+                elif _is_residual(nm) or _fallback_name is None:
+                    continue
+                else:
+                    tgt = _fallback_name
+                slot = acc.setdefault(tgt, {"rev": 0.0, "_wsum": 0.0, "_wden": 0.0})
+                slot["rev"] += rev
+                _mg = _mg_of(r)
+                if _mg is not None:
+                    slot["_wsum"] += rev * _mg
+                    slot["_wden"] += rev
+            for slot in acc.values():
+                _wden = slot.pop("_wden")
+                _wsum = slot.pop("_wsum")
+                slot["margin"] = (_wsum / _wden) if _wden else None
+            return acc
+
+        def _is_residual(name) -> bool:
+            """是否为「残差 / 技术性科目」而非真实产品线。
+
+            「其他(补充)」「分部间抵销」「平衡项目」这类科目只是合并报表的轧差项，
+            公司**是否列出它们取决于当年有无残差**，不构成「分类体系差异」的证据。
+            实测 300308：基准期 2025 年报列了「其他」，2023/2024 年报没列 —— 匹配率
+            分母虚高到 2，历史期只命中 1 项 = 50% < 70%，两个年报期被整期剔除，
+            标题「三年分部趋势」只剩 2025 + 2026H1。故仅把它们排除出**匹配率分母**，
+            仍保留在趋势行里（前期无值渲染为 —），不改变既有展示口径。
+            """
+            s = "".join(str(name).split())
+            return bool(_re.match(
+                r"^(其他|其它|分部间抵销|内部抵销|抵销|平衡项目|合计|总计)", s
+            ))
 
         def _period_kind(d: str) -> str:
             if len(d) >= 10:
@@ -3514,22 +4082,44 @@ def build_overview_data(
             for r in _prod_all
             if _seg_date_key(r) == _base_d
         ]
+        # 匹配率分母只算真实产品线：基准期的「其他」等残差科目在历史期常常不存在，
+        # 计入分母会把历史期误判为「分类体系不一致」而整期剔除（见 _is_residual）。
+        _match_names = [n for n in _latest_names if not _is_residual(n)] or _latest_names
+        # 历史期里未匹配到任何基准产品名的**非残差**段（多为基准期已并入「其他」
+        # 的旧独立板块，如中际旭创 2023 的「汽车光电子」「光组件」）统一并入基准期的
+        # 残差行（通常是「其他」），与该期自身的归类口径一致；基准期若无该行则保持
+        # 丢弃（宁缺勿编）。用于 _period_agg 的归并。
+        _fallback_name = next((n for n in _latest_names if _is_residual(n)), None)
 
         _MATCH_RATIO = 0.7
         _ok_dates = []
+        _dropped: list[tuple[str, float, list[str]]] = []
         for d in _trend_dates:
             _date_rows = [r for r in _prod_all if _seg_date_key(r) == d]
-            if not _latest_names:
+            if not _match_names:
                 break
-            _hit = sum(1 for name in _latest_names if _find_seg_rec(name, _date_rows) is not None)
-            _ratio = _hit / len(_latest_names)
+            _hit_names = [name for name in _match_names if _find_seg_rec(name, _date_rows) is not None]
+            _ratio = len(_hit_names) / len(_match_names)
             if d == _base_d or _ratio >= _MATCH_RATIO:
                 _ok_dates.append(d)
             else:
-                logger.info(
-                    "[overview] 分部趋势剔除期次 %s：产品名匹配率 %.0f%%（基准期 %s，共 %d 项）",
-                    d, _ratio * 100, _base_d, len(_latest_names),
+                _miss = [n for n in _match_names if n not in _hit_names]
+                _dropped.append((d, _ratio, _miss))
+                # WARNING（不是 INFO）：期次被剔除会让「三年分部趋势」静默缺列，
+                # 属于必须被看见的数据质量问题。历史上 002384 / 300308 / 688981
+                # 都因残差科目虚高分母在此被误剔，故升级级别并打印缺失的产品名。
+                logger.warning(
+                    "[overview] 分部趋势剔除期次 %s：产品名匹配率 %.0f%% < %.0f%%"
+                    "（基准期 %s，分母 %d 项已剔残差；未命中产品名 %s）",
+                    d, _ratio * 100, _MATCH_RATIO * 100, _base_d, len(_match_names), _miss,
                 )
+        if _dropped:
+            logger.warning(
+                "[overview] 分部趋势窗口期次不齐：目标 %s，采纳 %s，剔除 %s。"
+                "请核对是否属「分类体系真的变了」——若只是科目命名漂移（如「其他」"
+                "有无、「XX制造代工」vs「XX代工」），应扩充匹配而非丢期。",
+                _trend_dates, _ok_dates, [d for d, _, _ in _dropped],
+            )
         logger.info(
             "[overview] 分部趋势期次：目标 %s → 采纳 %s（基准期 %s）",
             _trend_dates, _ok_dates, _base_d,
@@ -3547,32 +4137,22 @@ def build_overview_data(
             _trend_rows = []
             # 保留原始数值，供 summary 二次计算
             _series_raw: dict[str, list[dict]] = {}
+            # 每期只归并一次（逐段归并，见 _period_agg），行/合计/同比共用同一份结果，
+            # 保证「行之和 == 合计」且各期合计 == 当期真实主营收入。
+            _agg_by_date = {d: _period_agg(d) for d in _ok_dates}
+            _prev_agg = _period_agg(_prev_h1) if _prev_h1 else {}
             for _disp in _latest_names:
-                _recs = []
-                for d in _ok_dates:
-                    _date_rows = [r for r in _prod_all if _seg_date_key(r) == d]
-                    _recs.append(_find_seg_rec(_disp, _date_rows))
-                if any(x is None for x in _recs):
+                _revs = [_agg_by_date[d].get(_disp, {}).get("rev") for d in _ok_dates]
+                _mgs = [_agg_by_date[d].get(_disp, {}).get("margin") for d in _ok_dates]
+                # 中途诞生的板块允许前期缺数（实测 002384「光模块」2025 年并购
+                # 新增，2023/2024 无记录）：原 any(None) 一票否决会把整行剔出
+                # 趋势表，板块当期收入 53.5 亿却凭空消失。改为「至少 2 期有数」，
+                # 缺期单元格渲染为 —；当期无数据的板块仍不展示（宁缺毋滥不变）。
+                if sum(1 for x in _revs if x is not None) < 2:
                     continue
-                _revs = [_seg_f(x.get("主营收入")) for x in _recs]
-
-                def _mg_of(x):
-                    """毛利率：优先取接口「毛利率」列；缺失（东财部分板块/期次
-                    系统性为空，如「其他(补充)」）时用 (收入−成本)/收入 自算，
-                    与 05 财务速写的毛利率自算口径一致——避免趋势图折线整段为空。"""
-                    mg = _seg_f(x.get("毛利率"))
-                    if mg is not None:
-                        return mg
-                    rev = _seg_f(x.get("主营收入"))
-                    cost = _seg_f(x.get("主营成本"))
-                    if rev is not None and cost is not None and rev != 0:
-                        return (rev - cost) / rev
-                    return None
-
-                _mgs = [_mg_of(x) for x in _recs]
                 _series_raw[_disp] = [
                     {"rev": _revs[i], "margin": _mgs[i], "is_h1": _is_h1[i]}
-                    for i in range(len(_recs))
+                    for i in range(len(_ok_dates))
                 ]
 
                 def _cell(rev, mg, is_h1_col):
@@ -3582,14 +4162,14 @@ def build_overview_data(
                     b = f"{mg * 100:.2f}%" if mg is not None else "—"
                     return f"{a} / {b}"
 
-                _cells = [_cell(_revs[i], _mgs[i], _is_h1[i]) for i in range(len(_revs))]
+                _cells = [
+                    _cell(_revs[i], _mgs[i], _is_h1[i]) for i in range(len(_ok_dates))
+                ]
                 _recent = _revs[-1]
-                # H1 同比：用最新 H1 对上一个 H1
+                # H1 同比：用最新 H1 对上一个 H1（同一套归并口径）
                 _yoy_s, _cls = "—", ""
                 if _is_h1[-1] and _prev_h1:
-                    _prev_rows = [r for r in _prod_all if _seg_date_key(r) == _prev_h1]
-                    _prev_rec = _find_seg_rec(_disp, _prev_rows)
-                    _prev_rev = _seg_f(_prev_rec.get("主营收入")) if _prev_rec is not None else None
+                    _prev_rev = _prev_agg.get(_disp, {}).get("rev")
                     if _recent is not None and _prev_rev:
                         _yoy = (_recent - _prev_rev) / abs(_prev_rev) * 100.0
                         _yoy_s = f"{_yoy:+.1f}%"
@@ -3642,10 +4222,15 @@ def build_overview_data(
                         _prev_total_h1 = _total_rev
                     else:
                         # 分部加权毛利率：Σ(rev × margin) / Σrev
-                        _wm = (
-                            sum(r * m for r, m in _cell_mgs if r > 0) / max(sum(r for r, m in _cell_mgs if r > 0), 1e-9)
-                        )
-                        _b = f"{_wm * 100:.2f}%"
+                        # 全部板块毛利率均缺失时（如 2023「汽车光电子/光组件」两段
+                        # 东财毛利率为空）渲染 — ，而不是被 1e-9 兜底成误导性的 0.00%。
+                        _mg_ok = [(r, m) for r, m in _cell_mgs if r > 0]
+                        _den = sum(r for r, m in _mg_ok)
+                        if _mg_ok and _den > 0:
+                            _wm = sum(r * m for r, m in _mg_ok) / _den
+                            _b = f"{_wm * 100:.2f}%"
+                        else:
+                            _b = "—"
                         _total_row["cells"].append(f"{_a} / {_b}")
                 # 合计的 H1 同比：用最新 H1 对上一个 H1
                 if _is_h1[-1]:
@@ -3654,12 +4239,11 @@ def build_overview_data(
                         for _series in _series_raw.values()
                     )
                     if _prev_h1:
-                        _prev_rows = [r for r in _prod_all if _seg_date_key(r) == _prev_h1]
-                        _prev_total = 0.0
-                        for _disp in _series_raw:
-                            _rec = _find_seg_rec(_disp, _prev_rows)
-                            if _rec is not None:
-                                _prev_total += _seg_f(_rec.get("主营收入")) or 0.0
+                        # 上一同口径 H1 的合计：同样走逐段归并，避免漏计
+                        _prev_total = sum(
+                            (_prev_agg.get(_disp, {}).get("rev") or 0.0)
+                            for _disp in _series_raw
+                        )
                         if _prev_total > 0:
                             _yoy = (_latest_h1_rev - _prev_total) / abs(_prev_total) * 100.0
                             _total_row["recent"] = f"{_latest_h1_rev / 1e8:.2f} 亿"
@@ -3668,17 +4252,59 @@ def build_overview_data(
                 _trend_rows.append(_total_row)
 
                 data["seg_trend"] = _trend_rows
+
+                # 趋势标题按数据生成（原为模板写死「三年分部趋势：一块在改善，一块在恶化」，
+                # 该断言并非对所有公司成立）：以最新 H1 同比的最高/最低板块命名
+                def _pct_num(s: str) -> float:
+                    try:
+                        return float(str(s).replace("%", "").strip())
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                _t_body = [r for r in _trend_rows if r.get("name") != "合计"]
+                _t_ups = [(_pct_num(r.get("yoy")), r["name"]) for r in _t_body if r.get("cls") == "up"]
+                _t_downs = [(_pct_num(r.get("yoy")), r["name"]) for r in _t_body if r.get("cls") == "down"]
+                if _t_ups and _t_downs:
+                    data["seg_trend_title"] = (
+                        f"三年分部趋势：{max(_t_ups)[1]}在改善，{min(_t_downs)[1]}在失速"
+                    )
+                elif _t_ups:
+                    data["seg_trend_title"] = f"三年分部趋势：{max(_t_ups)[1]}领跑，各板块齐升"
+                elif _t_downs:
+                    data["seg_trend_title"] = f"三年分部趋势：{min(_t_downs)[1]}承压最深"
+                else:
+                    data["seg_trend_title"] = "三年分部趋势：同口径分板块对比"
                 data["seg_trend_labels"] = _labels
                 data["seg_trend_cols"] = [
                     {"label": _labels[i], "is_h1": _is_h1[i]}
                     for i in range(len(_labels))
                 ]
-                data["seg_trend_note"] = (
-                    "数据来源：东方财富主营构成（按产品分类）。"
-                    f"取最近 3 个完整年报与最新半年报（{'、'.join(_labels)}）；"
-                    "H1 同比 = 最新半年报对上一同口径半年报。"
-                    "分类体系不一致的历史期次已剔除，不做拼接。"
-                )
+                # 是否含最新半年度列：东财主营构成的口径取决于公司是否在半年报
+                # 披露「分行业/分产品」表——工业富联等单一业务公司半年报明确
+                # 「未呈列分部信息」，数据源就没有 06-30 期次（实测 601138）。
+                # 此时「近期收入」列会退化成最新年报值（与 2025 列完全重复、
+                # 且列名暗示「最近一期」），必须整列隐藏，口径注如实说明。
+                _has_h1 = bool(_is_h1) and _is_h1[-1]
+                data["seg_trend_has_h1"] = _has_h1
+                _annual_labels = [
+                    _labels[i] for i in range(len(_labels)) if not _is_h1[i]
+                ]
+                if _has_h1:
+                    data["seg_trend_note"] = (
+                        "数据来源：东方财富主营构成（按产品分类）。"
+                        f"取最近 3 个完整年报与最新半年报（{'、'.join(_labels)}）；"
+                        "H1 同比 = 最新半年报对上一同口径半年报。"
+                        "分类体系不一致的历史期次已剔除，不做拼接。"
+                    )
+                else:
+                    data["seg_trend_note"] = (
+                        "数据来源：东方财富主营构成（按产品分类）。"
+                        f"仅取最近 {len(_annual_labels)} 个完整年报"
+                        f"（{'、'.join(_annual_labels)}）：公司最新半年度报告未披露"
+                        "分产品 / 分行业构成（无 H1 口径数据），故不展示最新半年度列"
+                        "与 H1 同比；半年度整体营收与毛利率见「财务速写」。"
+                        "分类体系不一致的历史期次已剔除，不做拼接。"
+                    )
 
                 # 自研 / 高毛利业务趋势：通用规则——取「毛利率最高的非主导板块」
                 # （收入不足主导板块一半者中毛利率最高者）。旧版用公司特定关键词
@@ -3702,10 +4328,20 @@ def build_overview_data(
                     _rv = [round((x.get("rev") or 0.0) / 1e8, 2) if x.get("rev") is not None else None for x in _series_raw[_disp]]
                     _mg_s = [round((x.get("margin") or 0.0) * 100, 2) if x.get("margin") is not None else None for x in _series_raw[_disp]]
                     data["self_dev"] = {"labels": _labels, "revenue": _rv, "margin": _mg_s}
-                    data["self_dev_note"] = (
-                        f"口径：{_disp}（{'、'.join(_labels)}，同口径对比）；"
-                        "数据来源：东方财富主营构成。"
-                    )
+                    # 注只列有数期次：中途纳入披露的板块（如 002384 光模块）前期为空，
+                    # 写全期次会让人误读为「该期数据缺失」而非「业务尚未存在」
+                    _pts = [lab for lab, v in zip(_labels, _rv) if v is not None]
+                    if _pts and len(_pts) < len(_labels):
+                        data["self_dev_note"] = (
+                            f"口径：{_disp}（有数期次 {'、'.join(_pts)}；"
+                            f"该板块自 {_pts[0]} 起纳入分部披露，此前无数据）；"
+                            "数据来源：东方财富主营构成。"
+                        )
+                    else:
+                        data["self_dev_note"] = (
+                            f"口径：{_disp}（{'、'.join(_labels)}，同口径对比）；"
+                            "数据来源：东方财富主营构成。"
+                        )
 
                     # 数据层兜底：生成「战略与现实的落差」式 LLM 总结
                     _fin = (profile_dict.get("layers", {}).get("financials", {}) or {}).get("summary", {}) or {}
@@ -3725,6 +4361,13 @@ def build_overview_data(
     _rows = []  # 前十大股东行；无数据时保持空列表，供下游「身份识别」稳定引用
     _rh = _gov.get("report_holders") or {}
     _rh_rows = _rh.get("holders") or []
+    # 页脚「数据来源」按**实际启用的股东口径**生成（名册 / 东财），
+    # 否则会出现「区块脚注写名册原文、页脚却写东方财富前十大股东并按总股本折算」的自相矛盾。
+    _holders_src_txt = ""
+    _holders_pct_txt = ""
+    # 口径护栏：表头由口径派生（流通口径绝不写「前十大股东」）。
+    _caliber = holders_caliber_of(_gov)
+    data["shareholders_title"] = holders_title(_caliber)
 
     def _num(x):
         try:
@@ -3763,7 +4406,22 @@ def build_overview_data(
                 "均取自名册原文（总持股含限售股）；质押、标记或冻结情况以名册披露为准。"
                 "数据来源：定期报告股东名册（PyMuPDF 确定性抽取）。"
             )
-    elif _holders and _cap > 0:
+            _holders_src_txt = (
+                f"公司定期报告《{_rh.get('title') or '定期报告'}》股东名册"
+                "（前十大股东／上下游／分红回购原文均由 PyMuPDF 确定性抽取）"
+            )
+            _holders_pct_txt = (
+                "前十大股东的持股比例、股东性质与质押数量取自定期报告名册原文"
+                "（总持股含限售股），不按当前总股本折算"
+            )
+    # 门槛放宽（2026-09-16）：原条件 `_cap > 0` 会让**总股本取数失败的历史报告直接不渲染
+    # 股东表**（实测 600519/601288/601398 的 profile 里 share_capital=None，报告治理区块
+    # 整块缺失）。东财十大股东专用接口自带「占总股本持股比例」原文，不依赖总股本，
+    # 故只要该列存在即允许渲染；总股本仅在折算兜底与质押占比时用到，缺失时优雅降级。
+    elif _holders and (
+        _cap > 0
+        or any(_num(_h.get("占总股本持股比例")) is not None for _h in _holders)
+    ):
         _act_by, _any_by = {}, {}
         for _r in _pledges:
             _k = _name_key(_r.get("shareholder"))
@@ -3773,12 +4431,18 @@ def build_overview_data(
             if str(_r.get("status", "")) == "未解押":
                 _act_by[_k] = _act_by.get(_k, 0.0) + (_num(_r.get("pledge_shares")) or 0.0)
 
+        # 口径：东财「十大股东」专用接口（默认）／全市场大表兜底时带 _口径=流通股东。
+        _is_free = any(str(_h.get("_口径") or "") == "流通股东" for _h in _holders)
         _rows = []
         for _h in _holders:
             _nm = _h.get("股东名称") or _h.get("name") or ""
             _sh = _num(_h.get("持股数"))
             _k = _name_key(_nm)
-            _pct = (_sh / float(_cap) * 100.0) if _sh else None
+            # 优先用接口原文「占总股本持股比例」（十大股东专用接口提供）；
+            # 兜底口径无此列时按当前总股本折算。
+            _pct = _num(_h.get("占总股本持股比例"))
+            if _pct is None and _sh and _cap:
+                _pct = _sh / float(_cap) * 100.0
             _act = _act_by.get(_k, 0.0)
             if _act > 0:
                 _inst = ""
@@ -3789,7 +4453,11 @@ def build_overview_data(
                 _inst_s = re.sub(
                     r"(股份有限责任公司|股份有限公司|有限责任公司|有限公司)$", "", _inst
                 )
-                _pl = f"未解押 {_act / float(_cap) * 100.0:.2f}%"
+                # 总股本缺失时按股数呈现，不做除法（历史报告 share_capital=None）
+                _pl = (
+                    f"未解押 {_act / float(_cap) * 100.0:.2f}%"
+                    if _cap else f"未解押 {_act:,.0f} 股"
+                )
                 if _inst_s:
                     _pl += f"（{_inst_s}）"
             elif _any_by.get(_k):
@@ -3807,36 +4475,77 @@ def build_overview_data(
         if _rows:
             _rows[0]["hl"] = True
             data["shareholders"] = _rows
-            _src = "东方财富前十大股东 / 股权质押明细"
-            data["gov_note"] = (
-                f"持股比例按当前总股本 {_cap / 1e8:.2f} 亿股折算；"
-                f"质押占比同为当前总股本口径（非质押当时口径）。数据来源：{_src}。"
-            )
+            if _is_free:
+                # 兜底口径只披露流通部分（限售股持有人会显著偏低），必须如实标注，
+                # 否则与报告表头「前十大股东」冲突——这正是 2026-09-16 的翻车点。
+                _src = "东方财富前十大流通股东（**流通口径**，不含限售股）/ 股权质押明细"
+                _basis = (
+                    f"持股比例按当前总股本 {_cap / 1e8:.2f} 亿股折算（该口径未披露）"
+                    if _cap
+                    else "该口径未披露持股比例，本地亦无总股本数据可折算"
+                )
+            else:
+                _src = "东方财富前十大股东 / 股权质押明细"
+                _basis = "持股比例取自东财「占总股本持股比例」原文"
+            if _cap:
+                data["gov_note"] = (
+                    f"{_basis}；质押占比按当前总股本口径（非质押当时口径）。"
+                    f"数据来源：{_src}。"
+                )
+            else:
+                # 总股本缺失时不得声称「按当前总股本口径」——那会变成无据陈述
+                data["gov_note"] = f"{_basis}。数据来源：{_src}。"
+            _holders_src_txt = _src
+            _holders_pct_txt = _basis
 
-    # 身份识别洞察：以数据为准覆盖 LLM 自由文本，杜绝「赵马克持股 27.7%」
-    # （真实 2.78%，万股/亿股换算 10 倍误差）或「把侯红亮 3.41% 张冠李戴到赵马克」
-    # 等编造。该字段与股东表共用同一份真实数据，LLM 不得自行计算持股比例。
-    # 名册口径与东财快照口径的行结构一致（name/shares/pct/pledge），此处通用。
-    if _rows:
-        _zmk = next(
-            (r for r in _rows if "ZHAO" in _name_key(r["name"]) or "赵马克" in r["name"]),
-            None,
-        )
-        _hou = next((r for r in _rows if "侯红亮" in r["name"]), None)
-        _ins = []
-        if _zmk:
-            _ins.append(
-                f"实控人赵马克（MARK ZHAO）直接持股 {_zmk['shares']} 万股，"
-                f"占总股本 {_cap / 1e8:.2f} 亿股的 {_zmk['pct']}，"
-                f"质押状态：{_zmk['pledge']}"
+    # 口径护栏（硬断言，2026-09-16）：股东表一旦渲染，表头与口径必须自洽、且必须带口径脚注。
+    # 表头已由 holders_title(_caliber) 派生，此处为不变量校验——用于在**生成期**拦下
+    # 「流通口径配『前十大股东』表头」这类无声降级，而不是等读者从数字里发现。
+    if data.get("shareholders"):
+        _t = str(data.get("shareholders_title") or "")
+        if _caliber == HOLDER_CALIBER_FREE and "流通" not in _t:
+            raise ValueError(
+                "股东口径护栏：数据源为东财流通股东口径（不含限售股），"
+                f"表头却为「{_t}」——拒绝产出名不副实的股东表"
             )
-        if _hou and _hou.get("pledge") not in ("无", "已解押"):
-            _ins.append(f"当前在押主要为{_hou['name']}（{_hou['pledge']}）")
+        if not str(data.get("gov_note") or "").strip():
+            raise ValueError("股东口径护栏：股东表缺少口径脚注（gov_note 为空）")
+
+    # 身份识别洞察：以数据为准覆盖 LLM 自由文本，杜绝 LLM 自算持股比例的编造
+    # （实测翻车：把 2.78% 写成 27.7%，或把他人质押张冠李戴到实控人名下）。
+    # 名册口径与东财快照口径的行结构一致（name/nature/shares/pct/pledge）。
+    # 通用化：取第一大自然人股东作锚点，不再硬编码特定公司人名（原写死「赵马克/侯红亮」，
+    # 导致 002384 等其他公司此块恒为空）。
+    if _rows:
+        _lead_nat = next(
+            (r for r in _rows if "自然人" in (r.get("nature") or "")), None
+        )
+        _ins = []
+        _lead = _lead_nat or (_rows[0] if _rows else None)
+        if _lead:
+            _ins.append(
+                f"第一大股东 {_lead['name']}（{_lead.get('nature') or '—'}）直接持股 "
+                f"{_lead['shares']} 万股，"
+                f"占总股本 {_cap / 1e8:.2f} 亿股的 {_lead['pct']}，"
+                f"质押状态：{_lead['pledge']}"
+            )
+        _pledged = [
+            r for r in _rows
+            if r is not _lead and r.get("pledge") not in ("无", "已解押", "—", None)
+        ]
+        if _pledged:
+            _ins.append(f"当前在押主要为{_pledged[0]['name']}（{_pledged[0]['pledge']}）")
         if _ins:
             data["id_insight_html"] = (
                 "；".join(_ins)
                 + "。自然人持股比例偏高，治理层面需重点关注实控人减持与股权质押动机，"
                   "以及由此带来的控制权稳定性风险。"
+            )
+            _lead_nature = (_lead or {}).get("nature") or ""
+            data["id_insight_title"] = (
+                f'为什么"实控人性质：{_lead_nature}"这一栏值得单独看'
+                if _lead_nature and _lead_nature != "—"
+                else '为什么"实控人性质"这一栏值得单独看'
             )
 
     # ------------------------------------------------------------------
@@ -4004,11 +4713,30 @@ def build_overview_data(
         )
 
     # --- 页脚来源分级：替换 LLM 生成的「数据来源：数据来源：…」占位重复文本 ---
+    # 股东口径随**实际启用来源**变化：名册口径下不再并列「东方财富前十大股东」，
+    # 也不再说「持股比例按当前总股本折算」（名册比例即其披露原文）。
+    _roster_used = bool(_rh_rows and _rows)
+    _ef_src = (
+        "东方财富（主营业务构成、股权质押明细、财务分析指标）"
+        if _roster_used
+        else "东方财富（主营业务构成、前十大股东、股权质押明细、财务分析指标）"
+    )
+    if _roster_used:
+        _basis_txt = (
+            f"{_holders_pct_txt}；03 治理风险扫描的未解押质押笔数／占比取东方财富质押明细，"
+            "按当前总股本折算（非质押当时口径）"
+        )
+    else:
+        _basis_txt = (
+            f"{_holders_pct_txt or '持股比例按东方财富披露值折算'}；"
+            "质押占比按当前总股本口径（非质押当时口径）"
+        )
     data["sources_html"] = (
-        "东方财富（主营业务构成、前十大股东、股权质押明细、财务分析指标）；"
-        "巨潮资讯 cninfo（公司基本资料、主营业务与经营范围）；"
+        f"{_ef_src}；"
+        + (f"{_holders_src_txt}；" if _holders_src_txt else "")
+        + "巨潮资讯 cninfo（公司基本资料、主营业务与经营范围）；"
         "申万指数（行业分类）；Sina 财经（利润表 / 资产负债表 / 现金流量表）。"
-        "财务数据截至最新报告期，持股比例与质押占比均按当前总股本折算。"
+        f"财务数据截至最新报告期；{_basis_txt}。"
     )
     data["caliber_html"] = (
         f"财务数据均为合并报表口径；最新报告期 {_fin.get('as_of') or '—'}"
@@ -4128,6 +4856,107 @@ def build_overview_data(
         data["bull_points"] = _fb_layer["bull_points"]
     if _fb_layer.get("bear_points"):
         data["bear_points"] = _fb_layer["bear_points"]
+
+    # —— 三块「具体公司」补位：一手抽取未点名的环节由公开产业信息补充业内公认的
+    # 代表性企业（一律标注「非一手来源·待核实」）。背景：定期报告普遍不点名客户/
+    # 供应商（实测 601138 半年报 221 页仅 1 处具名合作方、002384 全篇无具名客户），
+    # 单纯依赖一手抽取无法满足「列举具体公司」的阅读需求。
+    # 原则：一手行永远在前且原样保留，公开信息只补空缺、绝不覆盖一手来源。
+    try:
+        _pub = _build_public_entities(_bc, data, use_llm=use_llm)
+    except Exception as _pub_e:  # noqa: BLE001
+        logger.warning("[overview] 公开信息补位异常：%s", _pub_e)
+        _pub = {"upstream": [], "downstream": [], "partners": []}
+
+    # 上游：代表企业挂到对应类别行（无授权代理阵营的制造商等）
+    if _pub.get("upstream") and data.get("upstream_struct"):
+        _sup_by_cat = {
+            str(r.get("category") or ""): str(r.get("names") or "")
+            for r in _pub["upstream"]
+        }
+        for _ur in data["upstream_struct"]:
+            _sup = _sup_by_cat.get(str(_ur.get("category") or ""))
+            if _sup:
+                _ur["suppliers"] = _sup
+                _ur["suppliers_basis"] = "公开产业信息 · 待核实"
+        data["upstream_struct_has_suppliers"] = any(
+            str(r.get("suppliers") or "").strip() for r in data["upstream_struct"]
+        )
+
+    # 下游：仅当该领域一手「代表客户」为泛称时才补位（一手已具名的领域不动）
+    if _pub.get("downstream") and data.get("downstream"):
+        _dw_by_field = {
+            re.sub(r"\s+", "", str(d.get("field") or "")): d
+            for d in data["downstream"]
+        }
+        for _pd in _pub["downstream"]:
+            _fkey = re.sub(r"\s+", "", str(_pd.get("field") or ""))
+            _row = _dw_by_field.get(_fkey)
+            if _row is None:
+                continue
+            _cur = str(_row.get("customers") or "")
+            _cur_names = [n for n in re.split(r"[、，,]", _cur) if n.strip()]
+            if _cur_names and not all(is_generic_entity(n.strip(" 、，,()")) for n in _cur_names):
+                continue  # 一手已具名，无需补位
+            _row["public_customers"] = str(_pd.get("customers") or "")
+            _row["public_basis"] = str(_pd.get("basis") or "") or "公开产业信息 · 待核实"
+        if any(str(d.get("public_customers") or "").strip() for d in data["downstream"]):
+            data["downstream_note"] = (data.get("downstream_note") or "") + (
+                "「代表客户」列中单列的标注「公开信息·待核实」部分为基于公开产业信息"
+                "补充的业内公认代表企业，非公司定期报告披露，仅供参照。"
+            )
+
+    # 合作网络：一手为泛称口径时，追加公开信息具名行（独立成行，不替换泛称行）
+    if _pub.get("partners"):
+        _p_have = {
+            re.sub(r"\s+", "", str(p.get("partner") or ""))
+            for p in (data.get("partners") or [])
+        }
+        for _pp in _pub["partners"]:
+            _pn = str(_pp.get("partner") or "")
+            _pk = re.sub(r"\s+", "", _pn)
+            if not _pn or _pk in _p_have:
+                continue
+            data.setdefault("partners", []).append({
+                "partner": _pn,
+                "relation": str(_pp.get("relation") or "公开信息 · 待核实"),
+                "content": str(_pp.get("content") or ""),
+                "named": True,
+                "src": "public",
+                "basis": str(_pp.get("basis") or ""),
+            })
+            _p_have.add(_pk)
+        # 再走一次名单级去重 + 排序（公开信息行可能与一手行重名）
+        data["partners"] = _dedupe_partner_rows(data.get("partners") or [])
+        # 标题/导语按最终行重算（含公开信息补位行），避免标题家数与表格不一致
+        if data.get("partners"):
+            _all_rows = [p for p in data["partners"] if str(p.get("partner") or "").strip()]
+            _n_pub = sum(1 for p in _all_rows if p.get("src") == "public")
+            _n_1st = len(_all_rows) - _n_pub
+            _head_rows = [p for p in _all_rows if p.get("named", True)] or _all_rows
+            _head = "、".join(str(p.get("partner") or "") for p in _head_rows[:3])
+            data["partners_title"] = (
+                f"深度合作网络：{_head} 等 {len(_all_rows)} 家合作方"
+                if len(_all_rows) > 3 else f"深度合作网络：{_head}"
+            )
+            data["partners_intro"] = (
+                f"合作网络是业务模式的直接证据。下列 {len(_all_rows)} 条合作方与合作关系中，"
+                + (f"{_n_1st} 条取自定期报告一手披露" if _n_1st else "一手披露部分已并入下表")
+                + (
+                    f"，另 {_n_pub} 条为基于公开产业信息补充的业内公认代表企业"
+                    "（标注「公开信息·待核实」，非公司披露，仅供参照）："
+                    if _n_pub else "，均可溯源："
+                )
+            )
+
+    # 固定话术治理：核心结论标题按公司名生成（原为模板写死的「一句话看这家公司」）
+    _nm_final = (data.get("name") or "").strip()
+    if _nm_final and _nm_final != "（未获取）":
+        data["conclusion_title"] = f"一句话看{_nm_final}"
+
+    # 数据层无条件覆盖：页眉「报告日期」恒为报告生成当日（本地日期，仅到日）。
+    # 防任何上游来源（契约回填、缓存）把报告期/主营构成期误当成报告日期。
+    data["report_date"] = datetime.now().strftime("%Y-%m-%d")
 
     return data
 

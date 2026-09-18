@@ -615,8 +615,8 @@ def run_pipeline(
         profile.setdefault("layers", {}).setdefault("business", {})["business_chain"] = profile["business_chain"]
 
     # 前十大股东：定期报告**股东名册**（监管披露口径，含性质/总持股/质押数量）。
-    # 东财「前十大股东」为流通快照口径（实控人仅显示无限售部分 2.78%），与名册
-    # （11.10%，含限售）差异巨大，须以名册为准。半年报优先，缓存命中零网络。
+    # 东财口径为快照式（实控人可能只显示无限售部分 2.78%），与名册（11.10%，含限售）
+    # 差异巨大，须以名册为准。半年报优先，缓存命中零网络。
     # 注意：本块含 fitz（PyMuPDF），必须保持在并发池**之后**执行——fitz 先于
     # MiniRacer 加载会与池内 cninfo V8 调用交互导致间歇性进程崩溃（OV-2 实测）。
     try:
@@ -628,7 +628,15 @@ def run_pipeline(
         _rep_meta = _fetch_rep(entity.code, kind="semi") or _fetch_rep(entity.code)
         if _rep_meta:
             _rhs = _ext_holders(_rep_meta["pdf_path"])
-            if len(_rhs) >= 5:
+            # 阈值 10（2026-09-16 由 8 上调）：**前十大股东表必然恰好 10 行**，抽取
+            # 不足 10 行即说明有股东整行丢失——实测 601138 年报因页眉把
+            # “China Galaxy Enterprise Limited”与性质“境外法人”劈开，第一、二大股东
+            # 双双丢失，只剩 8 行；002384 年报因名称折行只剩 9 行。残缺名册比换口径更
+            # 危险：读者会把“只有 8 位”当成披露事实。
+            # 东财 stock_gdfx_top_10_em 与名册**逐条同值同口径**（宁德时代
+            # 22.04%/19.33%/9.09% 三方对照一致），故不足 10 行时回退东财十大股东
+            # 属**不换口径**的可靠降级，仅缺“股东性质/质押数量”两列。
+            if len(_rhs) >= 10:
                 _t = _rep_meta.get("title") or ""
                 _ym = _re.search(r"(\d{4})年(半)?年度报告", _t)
                 if _ym:
@@ -654,6 +662,15 @@ def run_pipeline(
                     }
                     for _i, _h in enumerate(_rhs)
                 ]
+            else:
+                # 不再沉默回退：名册不足时口径会从「名册」变成「东财十大股东」，
+                # 后者虽有总持股但**缺股东性质与质押数量**，必须在运行日志里可见。
+                print(
+                    f"[overview] 定期报告股东名册抽取不全（{len(_rhs)}/10 行，采纳阈值 10），"
+                    "改用东财十大股东口径——该口径为总持股含限售、与名册逐条同值，"
+                    "但缺「股东性质/质押数量」两列。",
+                    file=sys.stderr,
+                )
     except Exception as e:  # noqa: BLE001
         print(f"[overview] 股东名册抽取失败，回退东财口径：{e}", file=sys.stderr)
 
@@ -669,6 +686,24 @@ def run_pipeline(
             )
         except Exception:
             profile["holders"] = []
+
+    # 股东口径落库（防复发，2026-09-16）：报告表头/脚注必须与实际口径一致，
+    # 不允许渲染层靠「行内字段长相」猜。此处是 holders 的**唯一收口点**（名册覆盖、
+    # 子进程并发取数、串行兜底三条路径都已执行完），故在此统一判定一次。
+    #   - 名册            ：《定期报告》股东名册（含股东性质/总持股/质押数量）
+    #   - 东财十大股东     ：东财 stock_gdfx_top_10_em，与名册同为「总持股含限售」口径
+    #   - 东财流通股东     ：东财全市场流通大表兜底，**只含无限售部分**，必须显著标注
+    if profile.get("report_holders"):
+        profile["holders_caliber"] = "名册"
+    elif any(
+        str((_r or {}).get("_口径") or "") == "流通股东"
+        for _r in (profile.get("holders") or [])
+    ):
+        profile["holders_caliber"] = "东财流通股东"
+    elif profile.get("holders"):
+        profile["holders_caliber"] = "东财十大股东"
+    else:
+        profile["holders_caliber"] = ""
 
     result = AnalysisResult(
         name=profile.get("name") or entity.name or code,

@@ -550,45 +550,70 @@ class AkShareClient(DataClient):
             _GDFX_FREE_CACHE[date] = df
         return df
 
-    def get_holders(self, code: str) -> pd.DataFrame:
-        """03 股权治理：前十大（流通）股东。
+    @throttle()
+    def _gdfx_top10(self, symbol: str, date: str) -> Optional[pd.DataFrame]:
+        """单股**前十大股东**（东财，专用接口）。含「占总股本持股比例」，2-3s 返回。"""
+        return self._ak.stock_gdfx_top_10_em(symbol=symbol, date=date)
 
-        实测：stock_gdfx_top_10_em 在当前环境抛 KeyError('sdgd')（push2 封禁），
-        改用 stock_gdfx_free_holding_detail_em（同域名族、可用），按股票代码过滤取前十大。
-        返回列对齐基类契约：名次/股东名称/持股数/占总股本持股比例/增减/变动比率。
+    def get_holders(self, code: str) -> pd.DataFrame:
+        """03 股权治理：**前十大股东**（东财「十大股东」口径）。
+
+        期望列：报告期 / 名次 / 股东名称 / 持股数 / 占总股本持股比例 / 增减 / 变动比率
+
+        2026-09-16 修订（口径纠错）：主源改回 ``stock_gdfx_top_10_em``。此前该接口
+        抛 KeyError('sdgd')（push2 封禁期）被替换成 ``stock_gdfx_free_holding_detail_em``
+        ——但那是**前十大流通股东**：限售股持有人只显示无限售部分，报告表头写「前十大
+        股东」名不副实；且它是全市场大表（单次 66s 实测）。现专用接口已恢复，改为主源，
+        附赠「占总股本持股比例」原文列（免去按总股本折算）；全市场大表降为兜底。
         """
         code = self._norm_code(code)
         if self._ak is None:
             return pd.DataFrame()
-        # 由近及远尝试最近的几个报告期，取首个有本股数据的。
-        # 2026-09-09 收敛为 3 个候选：本接口每次拉取**全市场**大表（单次 5-10s），
-        # 6 个候选期逐次拉取实测 39s；概况报告中 holders 仅为名册缺失时的兜底口径
-        # （主源是定期报告股东名册），保留最近 3 期足以覆盖绝大多数公司。
         year = pd.Timestamp.now().year
-        candidates = [f"{year}0630", f"{year}0331", f"{year-1}1231"]
+        _sym = self._exchange_prefix(code)
+        # 主源：十大股东（单股、快、口径正确）。由近及远取首个有本股数据的报告期。
+        for dt in (
+            f"{year}0630", f"{year}0331", f"{year - 1}1231",
+            f"{year - 1}0930", f"{year - 1}0630",
+        ):
+            try:
+                with _Silence():
+                    df = self._gdfx_top10(_sym, dt)
+                if df is None or df.empty:
+                    continue
+                df = df.copy()
+                if "报告期" not in df.columns:
+                    df["报告期"] = f"{dt[:4]}-{dt[4:6]}-{dt[6:]}"
+                keep = [
+                    "名次", "股东名称", "报告期", "持股数",
+                    "占总股本持股比例", "增减", "变动比率",
+                ]
+                return df[[c for c in keep if c in df.columns]].reset_index(drop=True)
+            except Exception:
+                continue
+        # 兜底：全市场「前十大流通股东」大表。口径为流通股（不含限售），
+        # 仅在专用接口整体不可用时使用；消费端据此标注来源为流通口径。
         try:
-            with _Silence():
-                for dt in candidates:
-                    try:
-                        df = self._gdfx_free_holding(dt)
-                    except Exception:
-                        continue
-                    if df is None or df.empty:
-                        continue
-                    sub = df[df.get("股票代码") == code]
-                    if sub is None or sub.empty:
-                        continue
-                    sub = sub.copy()
-                    sub["名次"] = range(1, len(sub) + 1)
-                    sub = sub.rename(columns={
-                        "股东名称": "股东名称",
-                        "期末持股-数量": "持股数",
-                        "期末持股-持股变动": "增减",
-                        "期末持股-数量变化比例": "变动比率",
-                        "报告期": "报告期",
-                    })
-                    keep = ["名次", "股东名称", "报告期", "持股数", "增减", "变动比率"]
-                    return sub[[c for c in keep if c in sub.columns]].reset_index(drop=True)
+            for dt in (f"{year}0630", f"{year}0331", f"{year - 1}1231"):
+                try:
+                    df = self._gdfx_free_holding(dt)
+                except Exception:
+                    continue
+                if df is None or df.empty:
+                    continue
+                sub = df[df.get("股票代码") == code]
+                if sub is None or sub.empty:
+                    continue
+                sub = sub.copy()
+                sub["名次"] = range(1, len(sub) + 1)
+                sub = sub.rename(columns={
+                    "期末持股-数量": "持股数",
+                    "期末持股-持股变动": "增减",
+                    "期末持股-数量变化比例": "变动比率",
+                })
+                sub["_口径"] = "流通股东"
+                keep = ["名次", "股东名称", "报告期", "持股数", "增减", "变动比率", "_口径"]
+                return sub[[c for c in keep if c in sub.columns]].reset_index(drop=True)
         except Exception:
             pass
         return pd.DataFrame()

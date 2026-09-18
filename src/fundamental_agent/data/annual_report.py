@@ -67,6 +67,93 @@ def _extract_cache_put(kind: str, code: str, data):
 
 _CNINFO_QUERY = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 _STATIC = "http://static.cninfo.com.cn/"
+# 东财公告兜底（cninfo 只返回「摘要」时用它找定期报告正文并下载）
+_EM_ANN_QUERY = "https://np-anotice-stock.eastmoney.com/api/security/ann"
+_EM_PDF = "https://pdf.dfcfw.com/pdf/H2_{art_code}_1.pdf"
+_EM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+    ),
+    "Referer": "https://data.eastmoney.com/",
+}
+
+
+def _fetch_report_full_from_em(code: str, kind: str) -> Path | None:
+    """东财公告接口兜底取「定期报告正文」PDF（纯正文，非摘要/英文版/更正稿）。
+
+    背景：cninfo 公告查询对上交所标的有时只返回《半年度报告摘要》，缓存里于是
+    只有摘要——摘要不含「前十名股东」「前五名客户/供应商」等章节，会让股东名册、
+    上下游一手来源整体退回上一年度年报（实测 601138：上游标注成《2025 年年度报告》）。
+    东财公告接口与静态 PDF 域名均可匿名访问，作为 fallback 补全正文。
+    成功时返回已下载的本地 PDF 路径，失败返回 None（调用方按原逻辑继续）。
+    """
+    kw = "半年度报告" if kind == "semi" else "年度报告"
+    try:
+        r = requests.get(
+            _EM_ANN_QUERY,
+            params={
+                "sr": "-1", "page_size": "50", "page_index": "1",
+                "ann_type": "A", "client_source": "web", "stock_list": code,
+                "f_node": "0", "s_node": "0",
+            },
+            headers=_EM_HEADERS,
+            timeout=30,
+        )
+        r.raise_for_status()
+        anns = ((r.json() or {}).get("data") or {}).get("list") or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[annual_report] 东财公告查询失败：%s", e)
+        return None
+
+    cands = []
+    for a in anns:
+        title = a.get("title") or ""
+        if kw not in title:
+            continue
+        # 排除摘要/英文版/更正或取消类公告，只留正文本体
+        if any(x in title for x in ("摘要", "英文", "取消", "更正", "补充")):
+            continue
+        if kind == "annual" and "半年度" in title:
+            continue
+        cands.append(a)
+    if not cands:
+        return None
+    cands.sort(key=lambda a: a.get("notice_date") or "", reverse=True)
+    art = cands[0].get("art_code") or ""
+    raw_title = cands[0].get("title") or f"{code}_{kw}"
+    # 东财标题形如「工业富联:富士康工业互联网股份有限公司2026年半年度报告」，
+    # 去掉「简称:」前缀，与 cninfo 命名对齐——否则报告「一手来源」徽章会带上
+    # 简称前缀（实测出现《工业富联_富士康工业互联网股份有限公司2026年半年度报告》）。
+    title = re.split(r"[:：]", raw_title, maxsplit=1)[-1].strip() or raw_title
+    if not art:
+        return None
+
+    safe = re.sub(r"[^\w一-鿿.-]", "_", title)
+    pdf_path = CACHE_DIR / f"{code}_{safe}.pdf"
+    if pdf_path.exists() and pdf_path.stat().st_size > 100_000:
+        return pdf_path
+    try:
+        pr = requests.get(
+            _EM_PDF.format(art_code=art), headers=_EM_HEADERS,
+            timeout=180, stream=True,
+        )
+        pr.raise_for_status()
+        if pr.content[:4] != b"%PDF" and not pr.headers.get(
+            "Content-Type", ""
+        ).startswith("application/pdf"):
+            logger.warning("[annual_report] 东财返回非 PDF（title=%s）", title)
+            return None
+        tmp = pdf_path.with_suffix(".part")
+        with open(tmp, "wb") as f:
+            for ch in pr.iter_content(8192):
+                f.write(ch)
+        tmp.replace(pdf_path)
+        logger.info("[annual_report] 东财兜底下载正文成功：%s", pdf_path.name)
+        return pdf_path
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[annual_report] 东财正文下载失败：%s", e)
+        return None
 
 # 原厂品牌定义行：MURATA（村田） 指 日本芯片原厂品牌
 _RE_MAKER = re.compile(
@@ -205,14 +292,79 @@ _RE_PARTNER_ENUM = re.compile(
     r"(?:深度合作|战略合作|紧密合作|稳固的合作关系|长期合作|良好的合作关系|战略合作协议)"
 )
 
+# 动词前置变体（主语可省略）：「（同时，）深化与英伟达、思灵机器人等企业的合作，共同探索…」
+# 实测 601138 半年报 221 页中唯一的具名合作句即此语序，旧正则要求
+# 「公司与 X … 动词 … 锚词」顺序而整体漏抽，导致具名合作方全部丢失。
+_RE_PARTNER_ENUM_PRE = re.compile(
+    r"(?:深化|加强|拓展|扩大|推进|开展|建立)\s*(?:与|同|和)\s*"
+    r"([^。；，,]{2,80})\s*"
+    r"(?:等\s*[^。；，,]{0,12}?)?\s*"
+    r"((?:客户|厂商|供应商|伙伴|企业|公司)?)"
+    r"[^。；]{0,16}?(?:的)?(?:合作|协作|协同)"
+)
+
+# 泛称词素/词条：这些「名字」是原文真实措辞，但不是企业实体，不能当作
+# 「具体公司」列示（实测 601138/002384 的合作方列曾被「全球多家头部客户」
+# 「核心客户」占用，读者无法据此获取任何具体公司信息）。
+_GENERIC_ENTITY_MARKERS = (
+    "主要客户", "头部客户", "领先客户", "顶尖客户", "核心客户", "大客户", "客户群",
+    "众多客户", "重要客户", "战略客户", "优质客户", "国内外客户", "全球客户",
+    "主要供应商", "头部供应商", "核心供应商", "主要厂商", "合作伙伴", "合作方",
+    "主要企业", "知名企业", "头部企业", "主要品牌",
+)
+_GENERIC_ENTITY_EXACT = {
+    "客户", "供应商", "厂商", "伙伴", "企业", "公司", "客户群", "渠道商",
+    "经销商", "品牌方", "服务商", "合作方", "上下游", "相关方", "原厂",
+    "云服务商", "云厂商", "终端客户", "终端厂商", "下游客户", "上游供应商",
+}
+
+
+def is_generic_entity(name: str) -> bool:
+    """判定名称是否为泛称（非具体公司/机构实体）。
+
+    用于把「全球主要客户」这类表述与真正的具名公司（「英伟达」「村田」）
+    区分开：前者可保留其原文信息量，但不能冒充「具体公司」展示。
+    """
+    n = re.sub(r"[\s·・（）()\[\]【】、，,]+", "", str(name or ""))
+    if not n:
+        return True
+    if n in _GENERIC_ENTITY_EXACT:
+        return True
+    if any(w in n for w in _GENERIC_ENTITY_MARKERS):
+        return True
+    # 短名称且以泛称词素收尾（「全球主要云服务商」「行业核心客户」），
+    # 但排除带企业后缀的正式名（「华为技术有限公司」不以泛称词收尾）
+    if len(n) <= 12 and re.search(
+        r"(客户|供应商|厂商|伙伴|合作方|服务商|企业|公司)$", n
+    ):
+        if not re.search(r"(有限公司|有限责任公司|股份公司|集团)$", n):
+            return True
+    # 关系描述而非企业实体（「产业链上下游」「产业生态伙伴」）
+    if re.search(r"(上下游|产业链|供应链|生态圈|生态伙伴|相关方)$", n):
+        return True
+    return False
+
+
+def split_named_entities(raw: str) -> tuple[list[str], list[str]]:
+    """把「A、B、C 等 XX」式的名单拆成（具名实体, 泛称）两部分。"""
+    names = [x.strip() for x in re.split(r"[、，,]", str(raw or "")) if x.strip()]
+    named = [x for x in names if not is_generic_entity(x)]
+    generic = [x for x in names if is_generic_entity(x)]
+    return named, generic
+
 
 def _extract_partner_sents(text: str) -> list[dict]:
     """从定期报告原文抽深度合作关系（通用句式，零公司硬编码）。
 
     模式 1（锚词式）：「与 X 共同设立…联合实验室」——锚词在前、合作方紧邻；
     模式 2（列举式）：「与 A、B、C 等行业核心客户开展了深度合作」——合作方
-    名单在句中、锚词在句尾。关系分类按合作方尾词（客户→下游核心客户；
-    供应商/厂商→上游供应链）。整句作合作内容（可溯源），宁缺毋滥。
+    名单在句中、锚词在句尾；
+    模式 3（动词前置式）：「深化与 A、B 等企业的合作」——语序同上两式逆置，
+    实测为具名合作方最常出现却最易漏抽的一种。
+
+    名单统一按「具名实体 / 泛称」拆分：具名实体（英伟达、村田）作为合作方
+    展示；纯泛称（「全球主要客户」）虽是原文真实措辞但不能充当「具体公司」，
+    以 `named=False` 标记后由展示层弱化呈现。整句作合作内容（可溯源）。
     """
     out: list[dict] = []
     seen: set[str] = set()
@@ -229,6 +381,41 @@ def _extract_partner_sents(text: str) -> list[dict]:
             return "上游供应链 · 紧密合作"
         return "战略合作"
 
+    def _emit(obj_raw: str, relation: str, sent: str) -> None:
+        """名单拆分 → 具名优先 → 去重入表。"""
+        obj = re.sub(r"等[^，。；]{0,10}$", "", re.sub(r"\s+", "", obj_raw or "")).strip("、，, ")
+        # 贪婪捕获会把定语一并吃进（「头部客户的联合研发模式」→ 合作方实为「头部客户」），
+        # 「与 X 的 Y」句式中 X 才是合作方，按「的」截断
+        obj = re.split(r"的|之|以及", obj)[0].strip("、，, ")
+        # 句首即泛称词素且明显是定语从句（「客户在技术创新及新品研发方面」）时，
+        # 截断回泛称词本身；「头部客户」这类短泛称保持原样（交由泛称判定处理）
+        _gm = re.search(r"(客户|供应商|厂商|伙伴|企业|公司|服务商|上下游)", obj)
+        if _gm and _gm.start() == 0 and len(obj) > 6:
+            obj = _gm.group(1)
+        if len(obj) < 2 or not sent:
+            return
+        # PDF 折行会把句子切碎（「技术迭代\n与产能优化」），去折行但保留词内空格
+        sent = re.sub(r"\s*\n\s*", "", sent)
+        sent = re.sub(r"[ \t]{2,}", " ", sent).strip()
+        named, generic = split_named_entities(obj)
+        partner = "、".join(named)
+        if not partner:
+            # 该句未点名具体公司：保留泛称原文（信息量仍在「合作内容」），
+            # 标记 named=False，展示层据此弱化，不与具名公司混淆
+            partner = "、".join(generic[:3])
+        if len(partner) < 2:
+            return
+        key = partner[:40]
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({
+            "partner": partner,
+            "relation": relation,
+            "content": sent[:220] + ("……" if len(sent) > 220 else ""),
+            "named": bool(named),
+        })
+
     # 模式 1：锚词式（联合实验室等具体项目）
     for m in _RE_PARTNER_ANCHOR.finditer(text):
         head = text[max(0, m.start() - 80): m.start()]
@@ -237,52 +424,226 @@ def _extract_partner_sents(text: str) -> list[dict]:
             pass  # 取锚词前最后一个匹配
         if not my:
             continue
-        partner = my.group(1).strip()
-        relation = f"联合/战略合作（{m.group(0)}）"
-        sent = _sent_of(m.start(), m.end())
-        if len(partner) < 2 or partner in seen or not sent:
-            continue
-        seen.add(partner)
-        out.append({
-            "partner": partner,
-            "relation": relation,
-            "content": sent[:220] + ("……" if len(sent) > 220 else ""),
-        })
+        _emit(
+            my.group(1).strip(),
+            f"联合/战略合作（{m.group(0)}）",
+            _sent_of(m.start(), m.end()),
+        )
 
     # 模式 2：列举式（客户/供应商名单 + 合作锚词在句尾）
     for m in _RE_PARTNER_ENUM.finditer(text):
-        obj = m.group(1).strip()
-        # 去尾部残留的「等XX」引导（贪婪捕获会把「等行业核心客户」的类别词吸进 obj）
-        obj = re.sub(r"等[^，。；]{0,10}$", "", obj).strip()
-        # 压缩 PDF 折行空格（「OPPO、 vivo」「上游EDA 厂商」）
-        obj = re.sub(r"\s+", "", obj)
-        if len(obj) < 4:
-            continue
-        key = obj[:40]
-        if key in seen:
-            continue
-        sent = _sent_of(m.start(), m.end())
-        if not sent or len(sent) < 20:
-            continue
-        seen.add(key)
-        out.append({
-            "partner": obj,
-            "relation": _relation_of(m.group(2)) if m.group(2) else "战略合作",
-            "content": sent[:220] + ("……" if len(sent) > 220 else ""),
-        })
+        _emit(
+            m.group(1),
+            _relation_of(m.group(2)) if m.group(2) else "战略合作",
+            _sent_of(m.start(), m.end()),
+        )
+
+    # 模式 3：动词前置式（「深化与 A、B 等企业的合作」）
+    for m in _RE_PARTNER_ENUM_PRE.finditer(text):
+        _emit(
+            m.group(1),
+            _relation_of(m.group(2)) if m.group(2) else "战略合作",
+            _sent_of(m.start(), m.end()),
+        )
     return out
 
 # 前十大股东名册（定期报告「持股5%以上的股东或前10名股东持股情况」表）：
 # 每行 = 股东名称 | 股东性质 | 持股比例% | 期末持股数 | 期内增减 | 限售数 | 无限售数 | 质押状态 | 质押数量
 _ANCHOR_HOLDER = re.compile(
-    r"持股5%以上的股东或前10\s*名股东持股情况|前10\s*名股东持股情况|前十名股东持股情况"
+    # ① 深市句式：「持股5%以上的股东或前10名股东持股情况」
+    r"持股\s*5\s*%\s*以上的股东或前\s*10\s*名股东持股情况"
+    # ② 通用句式：允许「前十名股东1 持股情况」这类脚注上标（实测 600941 中报）
+    r"|前\s*(?:10|十)\s*名股东\s*[0-9]?\s*持股情况"
 )
+def _spaced(word: str) -> str:
+    """把词逐字用 ``\\s*`` 连接，容忍 PDF 折行把词拆开。
+
+    实测（300308 半年报）：股东性质列被排版拆成「境内 非国 有法 人」，
+    而旧枚举写死 `国有` 连续 → 该行整条不匹配。逐字分隔后可覆盖任意
+    断字位置，且因只放行空白、不会跨行吞掉正文。
+    """
+    return r"\s*".join(re.escape(ch) for ch in word)
+
+
+# 长词在前，避免「境内法人」抢先匹配掉「境内非国有法人」的合法前缀。
+# 「境内一般法人」实测于 300750 宁德时代中报（部分公司的用词，等价于境内非国有法人）。
+_HOLDER_NATURES = (
+    "境内非国有法人", "境内一般法人", "境外自然人", "境内自然人",
+    "国有法人", "境外法人", "境内法人", "其他",
+)
+
+# 尾字缺失变体：PDF 偶把性质末字排到下一页首（实测 300308 半年报「章建平 境内 自然
+# 〔数值列+页眉〕人 中信证券…」），导致该行整条匹配不上、股东凭空少一位。
+# 为每个 ≥4 字的性质再注册一个「砍掉末字」的变体，命中后由映射补回全称。
+_HOLDER_NATURE_FORMS: list[tuple[str, str]] = [(w, w) for w in _HOLDER_NATURES]
+_HOLDER_NATURE_FORMS += [(w[:-1], w) for w in _HOLDER_NATURES if len(w) >= 4]
+_HOLDER_NATURE_MAP = dict(_HOLDER_NATURE_FORMS)
+
 _RE_HOLDER_ROW = re.compile(
-    r"((?:[\u4e00-\u9fa5A-Za-z0-9（）()·]|\s){1,64}?)\s+"
-    r"(境外\s*自然人|境内\s*自然人|境内\s*非\s*国有\s*法人|国有\s*法人|境外\s*法人|境内\s*法人|其他)\s+"
-    r"([\d.]+)%\s+([\d,]+)\s+(-?[\d,]+)\s+([\d,]+)\s+([\d,]+)\s+"
-    r"(?:不适用|冻结|质押)\s+([\d,]+)"
+    r"((?:[\u4e00-\u9fa5A-Za-z0-9（）()·－—.\-]|\s){1,96}?)\s+"
+    r"(" + "|".join(_spaced(v) for v, _ in _HOLDER_NATURE_FORMS) + r")\s+"
+    r"([\d.]+)%\s+([\d,]+)\s+"
+    # 行结构变体（002384 半年报实测）：增减栏可整段缺省或为 不变/新进 等文字；
+    # 纯无限售股东的限售栏缺省、质押状态为孤立「不适用」（无数量）；
+    # group(8) 质押数量在非质押分支为 None，消费端须兜底 0。
+    r"(?:(-?[\d,]+|不变|新进|未变)\s+)?"
+    r"(?:([\d,]+|不适用)\s+)?"
+    r"([\d,]+)\s+"
+    # 末列质押状态整体可缺省：PDF 会合并空列，无质押的股东行可能根本没有该列
+    # （实测 300750 宁德时代：无限售股东行止于持股数，无「质押/不适用」尾）。
+    # 有质押数量则取数；「无质押」的写法因公司而异（不适用/冻结/无/未知/-，
+    # 000001 平安银行用孤立 "-"）。
+    r"(?:质押\s+([\d,]+)|(?:不适用|冻结|未知|无|-))?"
 )
+
+# 版式 B（沪市/红筹系/大盘股：601138 工业富联、600941 中国移动、600519 贵州茅台、
+# 688981 中芯国际、688825 长鑫科技 等）：
+# 股东性质排在**行末**，比例在持股数量之后，列序为
+#   名称 |〔期内增减〕| 期末持股数量 | 比例% |〔限售数量〕|〔转融通限售数量〕|
+#   质押状态 |〔质押数量〕| 股东性质
+# 与版式 A（性质紧随名称）完全不同，须单列一条；抽取时按命中行数择优。
+#
+# 2026-09-16 增强（修复「增减列有值时整行失配」）：
+#   ① 增减列原先被完全忽略，但实测 600941/600519/688981 的该列**大多有值**
+#      （中国移动只抽到 5/10 行、贵州茅台 4/10 行）；现容忍「缺省 / 未知 / 数字 /
+#      折行数字」（601138 的增减被排成「- 81,80 2,944」，导致第 7 名整行丢失）。
+#      安全性：持股数与比例在 PDF 文字流里必以空白分隔，故 `([\d,]+)\s+([\d.]+)`
+#      无法把「20.5」拆成「20」与「.5」，增减组不会误吞持股数。
+#   ② 限售列可为 0~2 个（688825 同时披露「限售数量」与「包含转融通借出股份的限售
+#      股份数量」两列）。
+#   ③ 质押状态补「质押」（688981 有在押股东）；股东性质补「未知」（港股股东未披露）。
+#   ④ 名称字符集补半角逗号：英文名「Robot Holding Co., Ltd.」含逗号，缺之则名称
+#      捕获组只剩末词「Ltd.」。
+_HOLDER_NATURES_B = _HOLDER_NATURES + ("未知",)
+_RE_HOLDER_STATUS_B = "|".join(_spaced(w) for w in ("不适用", "未知", "质押", "无"))
+
+_RE_HOLDER_ROW_B = re.compile(
+    r"((?:[\u4e00-\u9fa5A-Za-z0-9（）()·－—.,\-]|\s){1,96}?)\s+"
+    r"(?:(?:[-－—+]?\s*[\d,]+(?:\s+[\d,]+)*|未知)\s+)?"   # 报告期内增减（可缺省）
+    r"([\d,]+)\s+"                                        # 期末持股数量
+    r"([\d.]+)\s+"                                        # 比例(%)
+    r"(?:([\d,]+|-)\s+)?"                                 # 限售数量
+    r"(?:(?:[\d,]+|-)\s+)?"                               # 转融通限售数量（688825）
+    r"(" + _RE_HOLDER_STATUS_B + r")\s+"                  # 质押状态
+    r"(?:([\d,]+|-)\s+)?"                                 # 质押数量
+    r"(" + "|".join(_spaced(w) for w in _HOLDER_NATURES_B) + r")"  # 股东性质
+)
+
+
+# 页眉噪声：定期报告分页会把「XX股份有限公司20XX年年度报告全文」+ 页码插进表格
+# 文字流，恰落在上一行尾部与下一行名字之间（实测 300308 半年报/年报）。
+_RE_REPORT_HEADER = re.compile(
+    r"[\u4e00-\u9fa5]{2,}?(?:股份)?有限公司?\s*\d{4}\s*年\s*(?:半)?年度报告全文"
+)
+_RE_PAGE_NO = re.compile(r"-\s*\d{1,3}\s*-")
+# 上一行股东性质的尾字残迹（「…境内 自然 人 中信证券…」）
+_RE_NATURE_DANGLE = re.compile(
+    r"^(?:" + _spaced("境内") + r"|" + _spaced("境外") + r")?"
+    r"(?:" + _spaced("非国有") + r")?"
+    r"(?:" + _spaced("自然人") + r"|" + _spaced("法人") + r"|人)\s+"
+)
+# 质押状态词（容忍字间空格——002384 年报把「不适用」排成「不适 用」）
+_RE_LEAD_STATUS = re.compile(
+    r"^(?:(?:"
+    + "|".join(_spaced(w) for w in ("不适用", "冻结", "质押", "未知", "无"))
+    + r")[\d,.\s\u3000\-－—]*)+"
+)
+# 清洗后仍超过此长度的名称几乎必然是跨页断裂混入多行残渣（真实最长名约 37 字，
+# 如「中国工商银行股份有限公司－华泰柏瑞沪深300交易型开放式指数证券投资基金」）
+_HOLDER_NAME_MAX = 40
+# 只剩组织后缀 → 名字主体已被跨页拆走，属残渣而非股东名。
+# 英文后缀同理：PDF 把「Robot Holding Co., Ltd.」逐词分页时，若名称捕获组只吃到
+# 末词就会产出「Ltd.」这种脏名（实测 601138 工业富联半年报第 10 名）。
+_RE_ORG_ONLY = re.compile(
+    r"^(?:股份)?有限(?:责任)?公司$|^集团$|^中心$|^公司$|^有限合伙$|^合伙$"
+    r"|^(?:co\.?,?\s*)?ltd\.?$|^limited$|^inc\.?$|^corp\.?$|^corporation$"
+    r"|^company$|^holdings?$|^group$|^l\.?p\.?$|^llc$",
+    re.IGNORECASE,
+)
+# 括号型组织后缀（容忍折行空格：「（有限 合伙）」实测于 300308 年报）。
+# 其后仍有正文说明它属于**上一行**的名字，须取其后片段。不能对「有限公司」同样
+# 处理——基金名本身就含「股份有限公司－XX基金」。
+_RE_ORG_MARK = re.compile(r"[（(]\s*(?:有限|普通)\s*合伙\s*[）)]")
+# 表头列名：name 捕获组会连带上游表头，按**最后一个**列名截断（先细后粗）。
+# 必须逐字容忍空格——688825 表头被排成「质押、标 记或冻结 情况 股东 性质 股份 状态
+# 数 量」，连续字面匹配全部失效，表头整段残留进首个股东名。
+_HOLDER_HEAD_TAILS = (
+    "持有无限售条件的股份数量", "持有无限售条件", "股份状态", "股东名称",
+    "期末持股数量", "持股数量", "数量",
+)
+_HOLDER_HEAD_TAIL_RES = tuple(_spaced(t) for t in _HOLDER_HEAD_TAILS)
+
+
+def _clean_holder_name(raw: str) -> tuple[str, str]:
+    """把名册行的名称捕获组清洗成干净股东名，返回 ``(name, orphan)``。
+
+    捕获组为容错取「性质枚举前的最长片段」，起点可能落在表头/页眉/上一行尾部，
+    实测噪声：① 表头（「…股份状态 数量 山东中际投 资控股有限 公司」）；
+    ② 页眉+页码（「…不适用 0 中际旭创股份有限公司2026 年半年度报告全文 - 47 - 人 中信证券股 份有限公司」）；
+    ③ 前行残迹（「444 不适用 0 中国工商银 行股份有限 公司－…」）。
+    一律按「取最后一段」剥离；剥离后仍带报告字样/页码 → 返回空名（宁缺勿编）。
+
+    orphan 用于修复**跨页断裂**：页眉把「苏州云昌锦企业管理」与「中心（有限合伙）」
+    拆到两页，后半跑到下一页首被本行捕获。当组织后缀前的词干极短（≤4 字，如「中心」）
+    且后缀后还有正文时，判定该后缀归属上一行，摘出交由调用方回填。
+    """
+    s = str(raw or "")
+    # 表头列名截断：取**所有**列名（逐字容忍空格）在本串中出现的最大结束位置，截取其后
+    # 片段。不能用连续字面 rsplit——688825 表头折行成「股份 状态 数 量」，字面匹配全失效。
+    _cut = 0
+    for _p in _HOLDER_HEAD_TAIL_RES:
+        for _m in re.finditer(_p, s):
+            if _m.end() > _cut:
+                _cut = _m.end()
+    if _cut:
+        s = s[_cut:]
+    s = _RE_REPORT_HEADER.sub(" ", s)
+    s = _RE_PAGE_NO.sub(" ", s)
+    s = s.lstrip("0123456789. \u3000-－—").strip()
+    # 上一行质押状态残迹：正则的「不适用/冻结」分支不消费其后的数量列，列被 PDF 合并后
+    # 还可能连续堆叠（实测「未知未知贵州茅台…」「不适用香港中央结算有限公司」）。
+    s = _RE_LEAD_STATUS.sub("", s)
+    _mm = None
+    for _m in _RE_ORG_MARK.finditer(s):
+        _mm = _m
+    if _mm is not None and len(s) - _mm.end() > 3:
+        _stem = re.sub(r"\s+", "", s[:_mm.start()])
+        _rest = s[_mm.end():].lstrip("0123456789 \u3000-－—")
+        if 0 < len(_stem) <= 4:
+            # 词干太短，只可能是上一行名字的末段（「…企业管理」被切断后的「中心」）
+            _orphan = _stem + re.sub(r"\s+", "", _mm.group(0))
+            _rest = re.sub(r"^[\u4e00-\u9fa5]\s+", "", _rest)
+        else:
+            _orphan = ""
+        s = _rest
+        s = _RE_NATURE_DANGLE.sub("", s)
+        s = s.lstrip("0123456789 \u3000-－—").strip()
+    else:
+        _orphan = ""
+    s = _RE_NATURE_DANGLE.sub("", s)
+    s = s.lstrip("0123456789 \u3000-－—").strip()
+    # 版式 B 的名称捕获会顺带吃进「报告期内增减」列（为数字或 "-"，折行还会把它拆成
+    # 「- 81,80 2,944」）。真实股东名不会以「数字/连字符」结尾 → 剥离尾部该片段。
+    s = re.sub(r"(?:[\s\u3000]*[-－—\d,]+)+[\s\u3000]*$", "", s).strip()
+    # 名称归一：以**首字符**判定名称语种。
+    #   中文名（首字符为汉字）→ 合并**全部**折行空格。「中国人寿保险股份有限公司
+    #   －传统－普通保险产品－005L－CT001 沪」虽含拉丁字母与数字，本质仍是中文名，
+    #   其空格全是 PDF 折行产物；旧规则因「含拉丁字母即保留空格」把这类名字留成
+    #   「…有限公 司－…005L－CT001 沪」脏名（实测 002384/600519）。
+    #   英文名（首字符为拉丁字母）→ 保留词间空格（MARK ZHAO / Lumiza Limited），
+    #   仅归一连续空白（英文名内部折词无字典无法还原，属已知保守限制）。
+    if re.match(r"[\u4e00-\u9fa5]", s):
+        s = re.sub(r"\s+", "", s)
+    else:
+        s = re.sub(r"\s+", " ", s).strip()
+    if "年度报告" in s or "半年度报告" in s or _RE_PAGE_NO.search(s):
+        return "", ""
+    if len(s) > _HOLDER_NAME_MAX:
+        return "", ""
+    # 只剩一个组织后缀说明整段名字都被跨页拆走了（实测「…63 有限公司」）
+    if _RE_ORG_ONLY.match(s):
+        return "", ""
+    return s, _orphan
 
 
 def extract_top_holders(pdf_path: str) -> list[dict]:
@@ -320,27 +681,55 @@ def _extract_top_holders_impl(pdf_path: str) -> list[dict]:
         return []
     _m = _ANCHOR_HOLDER.search(flat)
     seg = flat[_m.end(): _m.end() + 4000] if _m else flat
+    # 截断到「无限售条件股东持股情况」表（其后是流通口径表，行结构相似，
+    # 混入会污染名册——名册表头「持有无限售条件的股份数量」不含「股东」后缀，
+    # 以「无限售条件股东持股」作为下一表起点标记是安全的）
+    _stop = seg.find("无限售条件股东持股")
+    if _stop > 0:
+        seg = seg[:_stop]
+    # 双版式择优：A（性质紧随名称，深市主流）行数通常≥B；仅当 B 命中更多时才采用
+    # （沪市红筹系的 A 版正则完全打不中，返回 0 行）。
+    _rows_a = _parse_holder_rows(seg, _RE_HOLDER_ROW, layout="A")
+    _rows_b = _parse_holder_rows(seg, _RE_HOLDER_ROW_B, layout="B")
+    if len(_rows_b) > len(_rows_a):
+        logger.info("[annual_report] 股东名册采用版式 B（性质列在行末）：%d 行", len(_rows_b))
+        return _rows_b
+    return _rows_a
+
+
+def _parse_holder_rows(seg: str, rex, *, layout: str) -> list[dict]:
+    """按给定行正则解析名册，返回最多 10 条股东记录。
+
+    layout="A"：名称|性质|比例|持股数|增减|限售|无限售|质押状态|质押数量
+    layout="B"：名称|〔增减〕|持股数|比例|〔限售〕|质押状态|〔质押数量〕|性质
+    """
     out: list[dict] = []
-    for r in _RE_HOLDER_ROW.finditer(seg):
-        name = r.group(1)
-        # 清洗上行尾迹/表头残片（「…不适用 0 张跃军」「…数量 MARK ZHAO」）
-        for tail in ("数量", "不适用"):
-            if tail in name:
-                name = name.rsplit(tail, 1)[-1]
-        name = name.lstrip("0123456789 ").strip()
-        # 中文名归一：PDF 折行空格（「乌鲁木齐 融冰股权」「香港中央 结算」）合并；
-        # 含英文字母的名称保留空格（MARK ZHAO）
-        if not re.search(r"[A-Za-z]", name):
-            name = re.sub(r"\s+", "", name)
+    for r in rex.finditer(seg):
+        name, _orphan = _clean_holder_name(r.group(1))
         if len(name) < 2:
             continue
+        # 跨页断裂回填：本行头部摘出的孤儿后缀（「中心（有限合伙）」）实为上一行
+        # 名字被页眉切掉的尾巴（上一行名不以「）」/「公司」收尾即为截断态）。
+        if _orphan and out and not re.search(r"[）)]$|公司$", out[-1]["name"]):
+            out[-1]["name"] += _orphan
+        if layout == "B":
+            _nature, _pct, _shares, _chg, _pledge = (
+                r.group(7), r.group(3), r.group(2), None, r.group(6),
+            )
+        else:
+            _nature, _pct, _shares, _chg, _pledge = (
+                r.group(2), r.group(3), r.group(4), r.group(5), r.group(8),
+            )
+        _pl = (_pledge or "").replace(",", "")
         out.append({
             "name": name,
-            "nature": re.sub(r"\s+", "", r.group(2)),
-            "pct": float(r.group(3)),
-            "shares": int(r.group(4).replace(",", "")),
-            "period_change": r.group(5),
-            "pledge_num": int(r.group(8).replace(",", "")),
+            "nature": _HOLDER_NATURE_MAP.get(
+                re.sub(r"\s+", "", _nature), re.sub(r"\s+", "", _nature)
+            ),
+            "pct": float(_pct),
+            "shares": int(_shares.replace(",", "")),
+            "period_change": _chg,
+            "pledge_num": int(_pl) if _pl.isdigit() else 0,
         })
         if len(out) >= 10:
             break
@@ -399,7 +788,15 @@ def _find_cached_report(
                 return _p
         return None
     cands.sort(
-        key=lambda t: (t[0], t[1].stat().st_mtime if t[1].exists() else 0.0),
+        # 年份优先；同年份**正文优先于摘要**（摘要不含客户/供应商前五名表、
+        # 上下游与股东名册章节，命中摘要会让多个模块退化到年报口径——实测
+        # 601138 只缓存了 2026 半年度报告摘要，上游一手来源退回 2025 年报）；
+        # 最后才按 mtime 取更新者。
+        key=lambda t: (
+            t[0],
+            0 if "摘要" in t[1].name else 1,
+            t[1].stat().st_mtime if t[1].exists() else 0.0,
+        ),
         reverse=True,
     )
     return cands[0][1]
@@ -454,8 +851,23 @@ def fetch_annual_report(
         r.raise_for_status()
         anns = (r.json() or {}).get("announcements") or []
     except Exception as e:  # noqa: BLE001
-        logger.warning("[annual_report] 查询公告失败：%s", e)
-        return None
+        # cninfo 不可用（403/超时）时不再直接放弃：东财公告接口可匿名访问，
+        # 作为兜底仍能取到定期报告正文（实测 cninfo 403 期间东财正常）。
+        logger.warning("[annual_report] 查询公告失败，转东财兜底：%s", e)
+        _em_pdf = _fetch_report_full_from_em(code, kind)
+        if not _em_pdf:
+            return None
+        _m2 = re.search(r"(\d{4})年", _em_pdf.stem)
+        _y2 = int(_m2.group(1)) if _m2 else None
+        if year and _y2 != year:
+            return None
+        return {
+            "title": re.sub(r"^\d{6}_", "", _em_pdf.stem),
+            "year": _y2,
+            "pdf_path": str(_em_pdf),
+            "pdf_url": "",
+            "from_cache": True,
+        }
 
     # 「半年度报告」包含「年度报告」子串：annual 分支必须显式排除，防止串类
     if kind == "semi":
@@ -468,6 +880,24 @@ def fetch_annual_report(
             if "年度报告" in (a.get("announcementTitle") or "")
             and "半年度" not in (a.get("announcementTitle") or "")
         ]
+    # cninfo 查询为空、或只返回《…报告摘要》时，用东财公告兜底取正文：
+    # 摘要不含「前十名股东」「前五名客户/供应商」等章节，命中摘要会让股东名册、
+    # 上下游一手来源整体退回上一年度年报（实测 601138 上游标注成 2025 年报）。
+    if not targets or all(
+        "摘要" in (a.get("announcementTitle") or "") for a in targets
+    ):
+        _em_pdf = _fetch_report_full_from_em(code, kind)
+        if _em_pdf:
+            _m2 = re.search(r"(\d{4})年", _em_pdf.stem)
+            _y2 = int(_m2.group(1)) if _m2 else None
+            if not year or _y2 == year:
+                return {
+                    "title": re.sub(r"^\d{6}_", "", _em_pdf.stem),
+                    "year": _y2,
+                    "pdf_path": str(_em_pdf),
+                    "pdf_url": "",
+                    "from_cache": True,
+                }
     if not targets:
         return None
     targets.sort(key=lambda a: a.get("announcementTime", 0) or 0, reverse=True)
@@ -477,6 +907,13 @@ def fetch_annual_report(
     _full = [a for a in targets if "摘要" not in (a.get("announcementTitle") or "")]
     if _full:
         targets = _full
+    # 英文版公告不含「前十名股东」「前五名客户」等中文小节，解析全部扑空
+    # （002384 实测误取《2026年半年度报告_英文版_》→ 名册抽取 0 条 →
+    # 十大股东退化为东财十大流通股东口径），故优先中文版；
+    # 仅当只剩英文版时保留原选择（有总比没有好）。
+    _zh = [a for a in targets if "英文" not in (a.get("announcementTitle") or "")]
+    if _zh:
+        targets = _zh
     if year:
         hit = next((a for a in targets if str(year) in (a.get("announcementTitle") or "")), None)
         if not hit:
@@ -798,6 +1235,7 @@ def extract_business_chain(pdf_path: str) -> dict:
             "partner": f"{_mk['en']}（{_mk['cn']}）" if _mk.get("cn") else _mk["en"],
             "relation": "上游芯片原厂 · 授权代理",
             "content": f"公司代理分销其芯片产品线（公司代理品类涵盖 {_prod_terms_all} 等）。",
+            "named": True,
         })
     try:
         _full_txt = _flatten("\n".join(doc[i].get_text() for i in range(n)))
@@ -1027,13 +1465,77 @@ def extract_dividend_decision(
     }]
 
 
-def extract_repurchase_semi(pdf_path: str) -> dict | None:
-    """从半年度/年度报告抽取**最新一轮**回购并注销的实施结果（一手来源）。
+# 年报回购表格的固定表头里含「股权激励」字样，但它描述的是「占股权激励计划所涉及
+# 标的股票的比例」这一**列定义**，与本公司回购用途毫无关系。朴素关键词匹配会因此把
+# 所有公司误判为股权激励（601138 实测：两轮方案实际用途均为"减少注册资本"，却因
+# 表头命中被判成"股权激励"）。故判定用途前必须先剥离该表头噪声。
+_REPURCHASE_HEADER_NOISE = re.compile(
+    r"已\s*回购\s*数量\s*占[\s\S]{0,40}?比\s*例"
+    r"|占\s*股权\s*激励\s*计划\s*所\s*涉及\s*的\s*标的\s*股票\s*的\s*比例"
+)
 
-    半年报会同时列示历史多轮回购（如 2025-12 那轮 2,979,800 股与 2026-06 那轮
-    1,973,093 股），须取完成日期最新的一轮，否则报告会停在旧数据。
-    行文模式：「回购方案已于 YYYY 年 M 月 D 日实施完毕，公司累计回购股份数量为
-    X 股，于 YYYY 年 M 月 D 日……完成……注销」。
+# 逐轮切分锚点：兼容纵向标签版式「回购股份方案披露时间」（601138）与横向表头版式
+# 「方案披露时间」（002384 / 300184，PyMuPDF 压缩后常夹空格）。
+_REPURCHASE_ROUND_ANCHOR = re.compile(r"(?:回购股份)?方案披露\s*时\s*间")
+
+
+def _to_int(s: str) -> int | None:
+    """千分位数字串 → int；解析失败返回 None。"""
+    try:
+        return int(str(s).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _classify_repurchase_purpose(seg: str) -> str:
+    """回购用途归类（泛化，不写死任何公司的措辞）。
+
+    先剥离表格固定表头噪声，再按落地表述判定；「注销」在我国必然伴随注册资本减少，
+    故单独出现时仍归为注销并减少注册资本。
+    """
+    seg = _REPURCHASE_HEADER_NOISE.sub(" ", seg)
+    if "减少注册资本" in seg or ("注销" in seg and "注册资本" in seg):
+        return "注销并减少注册资本"
+    if "注销" in seg:
+        return "注销并减少注册资本"
+    if "员工持股" in seg and "股权激励" in seg:
+        return "员工持股计划/股权激励"
+    if "员工持股" in seg:
+        return "员工持股计划"
+    if "股权激励" in seg:
+        return "股权激励"
+    return ""
+
+
+def _split_repurchase_rounds(block: str) -> list[str]:
+    """按「（回购股份）方案披露时间」把回购章节切成逐轮段落。
+
+    年报常并排列示多轮方案（601138 2025 年报同时含 2024-07-31 与 2025-04-15 两轮），
+    若整段共用一次取值，会出现「日期取自轮 A、数量取自轮 B」的跨轮错配，拼出两个
+    轮次都不成立的伪数据。切分后每轮的日期/数量/用途由该轮段落内部自洽解析。
+    """
+    idx = [m.start() for m in _REPURCHASE_ROUND_ANCHOR.finditer(block)]
+    if not idx:
+        return [block]
+    return [
+        block[st : (idx[k + 1] if k + 1 < len(idx) else len(block))]
+        for k, st in enumerate(idx)
+    ]
+
+
+def extract_repurchase_semi(pdf_path: str) -> dict | None:
+    """从半年度/年度报告抽取**最新一轮**回购实施结果 + 报告期内回购最新进展（一手来源）。
+
+    ① 完整轮次：半年报会同时列示历史多轮回购（如 2025-12 那轮 2,979,800 股与
+       2026-06 那轮 1,973,093 股），须取完成日期最新的一轮，否则报告会停在旧数据。
+       行文模式：「回购方案已于 YYYY 年 M 月 D 日实施完毕，公司累计回购股份数量为
+       X 股，于 YYYY 年 M 月 D 日……完成……注销」。
+    ② 报告期内进展（无完整轮次句式时的兜底信号，实测 002384 2026H1）：
+       - 库存股附注：「公司于 YYYY 年 M 月 D 日以非交易过户方式将回购证券账户中的
+         X 股过户至……员工持股计划」；
+       - 现金流量表：「股份回购支出」本期发生额（合并报表在前，取首次命中）。
+    返回 dict（可同时含轮次字段与进展字段 esop_transfer / h1_cash_spent_yi），
+    两者皆无时返回 None（宁缺勿编）。
     """
     try:
         doc = fitz.open(pdf_path)
@@ -1041,7 +1543,9 @@ def extract_repurchase_semi(pdf_path: str) -> dict | None:
     except Exception as e:  # noqa: BLE001
         logger.warning("[annual_report] 半年报回购抽取失败：%s", e)
         return None
-    best = None  # (done_date, executed, completed_date_str)
+    best = None  # (completed_tuple, executed, done_tuple)
+    # ① 年报式行文：「回购方案已于 YYYY 年 M 月 D 日实施完毕，公司累计回购股份数量为
+    #    X 股，于 YYYY 年 M 月 D 日……完成注销」
     for m in re.finditer(
         r"回购方案已于\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日实施完毕[，,]"
         r"公司累计回购股份数量为\s*([\d,]+)\s*股[，,]?于?\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日",
@@ -1051,42 +1555,125 @@ def extract_repurchase_semi(pdf_path: str) -> dict | None:
         comp = (int(m.group(5)), int(m.group(6)), int(m.group(7)))
         if best is None or comp > best[0]:
             best = (comp, int(m.group(4).replace(",", "")), done)
-    if not best:
+
+    # ①' 半年报式行文（601138 2026H1 实测）：「截至 YYYY 年 M 月 D 日，本次回购已实施
+    #     完毕。……累计回购（公司股份数量）X 股」。原 ① 要求「回购方案已于…」前缀，
+    #     该表述会整体漏配 → 函数返回 None → 上层回退年报，报告因此停在旧数据。
+    #     注意「已实施完毕。」后跨句号，须用 [\s\S] 而非 [^。]。
+    for m in re.finditer(
+        r"截至\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日[，,]?\s*本次回购已实施完毕"
+        r"[\s\S]{0,150}?累计回购\s*(?:公司股份数量)?\s*([\d,]+)\s*股",
+        txt,
+    ):
+        comp = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if best is None or comp > best[0]:
+            best = (comp, int(m.group(4).replace(",", "")), comp)
+
+    # —— 报告期内进展信号（与完整轮次独立；原文含换行/空格，数字与单位间须容 \s*）——
+    _esop = re.search(
+        r"公司于\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日以非交易过户方式"
+        r"将回购证券账户中的\s*([\d,]+)\s*股过户至\s*([^。，]{0,40}?员工持股计划)",
+        txt,
+    )
+    _cash = re.search(r"股份回购支出\s*([\d,]+(?:\.\d+)?)", txt)
+
+    if not best and not _esop and not _cash:
         return None
-    comp, executed, _done = best
-    completed = f"{comp[0]:04d}-{comp[1]:02d}-{comp[2]:02d}"
-    wan = round(executed / 1e4, 2)
-    # 成交总金额（就近窗口内）
-    _amt = re.search(r"成交总金额为\s*([\d,\.]+)\s*元", txt)
-    amt_txt = ""
-    if _amt:
-        try:
-            amt_yi = float(_amt.group(1).replace(",", "")) / 1e8
-            amt_txt = f"，成交总金额 {amt_yi:.2f} 亿元"
-        except ValueError:
-            pass
-    purpose = "注销并减少注册资本" if ("注销" in txt and "注册资本" in txt) else ""
-    return {
-        "year": str(comp[0]),
+
+    out: dict = {
+        "year": "",
         "plan_shares": "",
-        "executed_shares": executed,
-        "executed_shares_wan": wan,
-        "purpose": purpose,
+        "executed_shares": None,
+        "executed_shares_wan": None,
+        "purpose": "",
         "disclosure_date": "",
-        "completed_date": completed,
-        "text": (
-            f"{comp[0]} 年回购方案于 {completed} 实施完毕，累计回购 "
-            f"{executed:,} 股（约 {wan} 万股）{amt_txt}，"
-            "已全部注销并用于减少注册资本。"
-        ),
+        "completed_date": "",
+        "text": "",
     }
+    if best:
+        comp, executed, _done = best
+        completed = f"{comp[0]:04d}-{comp[1]:02d}-{comp[2]:02d}"
+        wan = round(executed / 1e4, 2)
+        # 成交总金额（就近窗口内）
+        _amt = re.search(r"成交总金额为\s*([\d,\.]+)\s*元", txt)
+        amt_txt = ""
+        if _amt:
+            try:
+                amt_yi = float(_amt.group(1).replace(",", "")) / 1e8
+                amt_txt = f"，成交总金额 {amt_yi:.2f} 亿元"
+            except ValueError:
+                pass
+        # 用途：优先在「截至…累计回购」窗口内判定（半年报常无「回购用途」字段，但会写
+        # 「注销本次所回购的股份」等落地表述），窗口抽不到再退全文；两者都先剥离表头噪声。
+        # 旧实现固定写死「已全部注销并用于减少注册资本」，对股权激励类回购会失真。
+        _pw = ""
+        _mw = re.search(
+            r"截至\s*\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日[，,][\s\S]{0,200}?累计回购", txt
+        )
+        if _mw:
+            _pw = txt[_mw.start() : _mw.start() + 400]
+        purpose = _classify_repurchase_purpose(_pw) or _classify_repurchase_purpose(txt)
+        out.update({
+            "year": str(comp[0]),
+            "executed_shares": executed,
+            "executed_shares_wan": wan,
+            "purpose": purpose,
+            "completed_date": completed,
+            "source": "半年报",
+            "text": (
+                f"{comp[0]} 年回购方案于 {completed} 实施完毕，累计回购 "
+                f"{executed:,} 股（约 {wan:,.2f} 万股）{amt_txt}"
+                + (f"，用于{purpose}。" if purpose else "。")
+            ),
+        })
+
+    # —— 进展字段与叙述追加 ——
+    _prog_txt = ""
+    if _esop:
+        _ey, _em, _ed = int(_esop.group(1)), int(_esop.group(2)), int(_esop.group(3))
+        _esh = int(_esop.group(4).replace(",", ""))
+        _eto = _esop.group(5).strip()
+        out["esop_transfer"] = {
+            "date": f"{_ey:04d}-{_em:02d}-{_ed:02d}",
+            "shares": _esh,
+            "to": _eto,
+        }
+        _prog_txt += (
+            f"{_ey} 年 {_em} 月 {_ed} 日将回购证券账户中的 {_esh:,} 股"
+            f"过户至{_eto}；"
+        )
+    if _cash:
+        try:
+            _amt_f = float(_cash.group(1).replace(",", ""))
+        except ValueError:
+            _amt_f = None
+        if _amt_f:
+            out["h1_cash_spent_yi"] = round(_amt_f / 1e8, 2)
+            _prog_txt += (
+                f"报告期内股份回购支出 {_amt_f / 1e8:.2f} 亿元（现金流量表口径）。"
+            )
+    if _prog_txt:
+        _base = str(out.get("text") or "").rstrip()
+        out["text"] = (
+            _base + (" 最新进展：" + _prog_txt if _base else _prog_txt)
+        ).strip()
+    return out
 
 
 def extract_repurchase(pdf_path: str) -> dict | None:
-    """从年报 PDF 抽取报告期股份回购并注销方案与实施结果（一手来源）。
+    """从年报 PDF 抽取报告期股份回购实施情况（一手来源），按轮次逐轮解析后取最新一轮。
 
-    年报「四、股份回购在报告期的具体实施情况」表含拟回购数量、已回购数量、用途。
-    返回结构化 dict，渲染层据此展示真实回购规模，杜绝 LLM 凭记忆编造股数。
+    年报「股份回购在报告期的具体实施情况」常并排列示多轮方案（601138 2025 年报同时含
+    2024-07-31 与 2025-04-15 两轮）。旧实现整段共用一次取值：日期取段内首个、数量取段内
+    最后一个 ≥5 位数字，于是把轮 A 的日期配到轮 B 的数量上，拼出两个轮次都不成立的伪数据。
+    现按「（回购股份）方案披露时间」切分逐轮，每轮的日期/数量/用途在段内自洽解析，
+    最后取披露时间最新的一轮。
+
+    单轮内数量按四级优先解析（见 _executed_of）：正文「公司回购股份 X 股」→ 结构化字段
+    「已回购数量（股）X 股」→ 正文「累计回购（公司股份数量）X 股」→ 表格压缩版式兜底
+    （剔除区间值后取表尾数字）。用途判定先剥离表格固定表头噪声——「已回购数量占股权激励
+    计划所涉及标的股票的比例」含"股权激励"字样，会让所有公司被误判为股权激励用途。
+    全部未命中返回 None（宁缺勿编）。
     """
     try:
         doc = fitz.open(pdf_path)
@@ -1095,38 +1682,96 @@ def extract_repurchase(pdf_path: str) -> dict | None:
         logger.warning("[annual_report] 回购抽取失败：%s", e)
         return None
     i = txt.find("股份回购的实施进展情况")
-    block = txt[i:i + 1000] if i >= 0 else ""
-    exe = re.search(r"公司回购股份\s*([\d,]+)\s*股", block)
-    if not exe:
+    if i < 0:
+        i = txt.find("股份回购在报告期的具体实施情况")
+    if i < 0:
         return None
-    try:
-        executed = int(exe.group(1).replace(",", ""))
-    except ValueError:
+    block = txt[i:i + 1200]
+    # 截断：到「减持回购股份」小节或下一章节标题为止，防止把相邻节数字误当已回购量
+    for _cut in ("减持回购股份的实施进展", "五、优先股", "利润分配", "第七节"):
+        _j = block.find(_cut, 30)
+        if _j > 0:
+            block = block[:_j]
+
+    def _executed_of(seg: str) -> int | None:
+        """单轮段落内解析「已回购数量」，四级优先、逐级兜底（宁缺勿编）。"""
+        # ① 正文句式「公司回购股份 X 股」（300184 等）
+        exe = re.search(r"公司回购股份\s*([\d,]+)\s*股", seg)
+        if exe:
+            return _to_int(exe.group(1))
+        # ② 结构化字段「已回购数量（股）X 股」（601138 纵向标签-值版式）
+        _f = re.search(r"已\s*回购\s*数量\s*[（(]?\s*股\s*[）)]?\s*([\d,]+)\s*股", seg)
+        if _f:
+            return _to_int(_f.group(1))
+        # ③ 正文「累计回购（公司股份数量）X 股」
+        _c = re.search(r"累计回购\s*(?:公司股份数量)?\s*([\d,]+)\s*股", seg)
+        if _c:
+            return _to_int(_c.group(1))
+        # ④ 表格压缩版式兜底（002384 横向表头，标签与数据分行）：剔除区间值
+        #    （拟回购数量/金额「X-Y」）后取最后一个 ≥5 位数字（已回购数量列位于表尾）
+        if "已回购数量" in seg:
+            _no_range = re.sub(r"\d[\d,]*\s*-\s*\d[\d,]*", " ", seg)
+            _cands = re.findall(r"\d{1,3}(?:,\d{3})+|\d{5,}", _no_range)
+            if _cands:
+                return _to_int(_cands[-1])
         return None
-    plan = re.search(
-        r"拟回购股份数量[（(]股[）)]?\s*([\d,]+\s*股\s*-\s*[\d,]+股)", block
+
+    # —— 逐轮解析：同一轮的日期/数量/用途必须同源，否则会拼出跨轮伪数据 ——
+    parsed: list[dict] = []
+    for _order, seg in enumerate(_split_repurchase_rounds(block)):
+        executed = _executed_of(seg)
+        if not executed:
+            continue
+        _dm = re.search(r"(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日", seg)
+        disclosure = (
+            f"{_dm.group(1)}-{int(_dm.group(2)):02d}-{int(_dm.group(3)):02d}"
+            if _dm
+            else ""
+        )
+        # 该轮是否已实施完毕（如 601138 轮 A「截至2025年2月7日…实施完毕」）
+        _cm = re.search(
+            r"截至\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日[^。]{0,60}?回购[^。]{0,30}?实施完毕",
+            seg,
+        )
+        completed = (
+            f"{_cm.group(1)}-{int(_cm.group(2)):02d}-{int(_cm.group(3)):02d}"
+            if _cm
+            else ""
+        )
+        # 拟回购数量：仅认原文「…股-…股」句式。表格压缩版式中数量与比例数字会粘连
+        # （如 2050000-41000000.12%），通用区间兜底会抽出错误数字，故不做兜底（宁缺勿编）。
+        plan = re.search(
+            r"拟回购股份数量[（(]股[）)]?\s*([\d,]+\s*股\s*-\s*[\d,]+股)", seg
+        )
+        parsed.append({
+            "_order": _order,
+            "year": disclosure[:4],
+            "plan_shares": plan.group(1).replace(" ", "") if plan else "",
+            "executed_shares": executed,
+            "executed_shares_wan": round(executed / 1e4, 2),
+            "purpose": _classify_repurchase_purpose(seg),
+            "disclosure_date": disclosure,
+            "completed_date": completed,
+        })
+    if not parsed:
+        return None
+    # 取披露时间最新的一轮；披露时间同为空时退化为出现顺序最后（表格通常旧轮在前）。
+    best = max(parsed, key=lambda r: (r["disclosure_date"], r["_order"]))
+    best.pop("_order", None)
+    wan = best["executed_shares_wan"]
+    _seg_txt = (
+        f"公司于 {best['disclosure_date']} 披露回购方案，" if best["disclosure_date"] else ""
     )
-    # 用途：年报原文措辞可能是「用于注销并减少公司注册资本」或「用于注销并减少注册资本」，
-    # 精确串匹配会漏（实测 purpose 曾为空、卡片显示「—」），改为关键片段同时出现即判定。
-    purpose = "注销并减少注册资本" if ("注销" in block and "注册资本" in block) else ""
-    wan = round(executed / 1e4, 2)
-    _plan = plan.group(1).replace(" ", "") if plan else ""
-    return {
-        "year": "2025",
-        "plan_shares": _plan,
-        "executed_shares": executed,
-        "executed_shares_wan": wan,
-        "purpose": purpose,
-        "disclosure_date": "2025-10-29",
-        "completed_date": "2025-12-11",
-        # 拟回购数量抽取不到时（年报表格版式差异）整句省略，避免出现「拟回购 ，」这类空洞
-        "text": (
-            f"2025 年 10 月 29 日披露回购方案"
-            + (f"，拟回购 {_plan}" if _plan else "")
-            + "，用于注销并减少注册资本；截至 2025 年 12 月 4 日累计回购 "
-            f"{executed:,} 股（约 {wan} 万股），2025 年 12 月 11 日完成注销。"
-        ),
-    }
+    _plan_seg = f"，拟回购 {best['plan_shares']}" if best["plan_shares"] else ""
+    _purp_seg = f"，用途为{best['purpose']}" if best["purpose"] else ""
+    best["source"] = "年度报告"
+    # 拟回购数量抽取不到时（年报表格版式差异）整句省略，避免出现「拟回购 ，」这类空洞
+    best["text"] = (
+        f"{_seg_txt}报告期内累计回购 {best['executed_shares']:,} 股"
+        f"（约 {wan:,.2f} 万股）{_plan_seg}{_purp_seg}。"
+        "（一手来源：年度报告「股份回购在报告期的具体实施情况」）"
+    )
+    return best
 
 
 def extract_actual_controller(pdf_path: str) -> dict | None:
@@ -1266,11 +1911,39 @@ def _get_corporate_actions_impl(code: str) -> dict | None:
         if div or rep:
             ann = fetch_annual_report(code)
             ctl = None
+            rep_ann = None
             if ann:
                 try:
                     ctl = extract_actual_controller(ann["pdf_path"])
                 except Exception:  # noqa: BLE001
                     ctl = None
+                try:
+                    rep_ann = extract_repurchase(ann["pdf_path"])
+                except Exception:  # noqa: BLE001
+                    rep_ann = None
+            # 回购合并：年度「最近一轮完整实施」为基底，半年报「报告期内进展」
+            # 覆盖同名键（后者时点更新）。半年报仅有进展信号（无完整轮次句式，
+            # 如 002384 2026H1 过户员工持股 + 1 亿元回购支出）时也必须保留，
+            # 否则报告会停留在旧数据。
+            if rep and rep_ann:
+                _merged = {
+                    **{k: v for k, v in rep_ann.items() if v},
+                    **{k: v for k, v in rep.items() if v},
+                }
+                # 半年报叙述若只有进展（无「累计回购」字样），拼接年度轮叙述
+                if (
+                    rep.get("text")
+                    and rep_ann.get("text")
+                    and "累计回购" not in str(rep.get("text"))
+                ):
+                    _merged["text"] = (
+                        str(rep_ann["text"]).rstrip()
+                        + " 最新进展："
+                        + str(rep["text"])
+                    )
+                rep = _merged
+            elif not rep and rep_ann:
+                rep = rep_ann
             return {
                 "dividend": div,
                 "repurchase": rep,

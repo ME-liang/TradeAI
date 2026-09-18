@@ -95,6 +95,33 @@ def _mislabel_check(html: str, profile_dict: dict) -> list[str]:
     return issues
 
 
+def _strip_segment_margins(profile_dict: dict) -> dict:
+    """深拷贝快照并剔除所有分项「毛利率」字段（数据级根治口径混用）。
+
+    背景：主营构成等分部数据自带「毛利率」字段（300184「电力产品等」23.9%、
+    002384「光模块」39.33%），qwen-turbo/qwen-plus 均反复把分项毛利率冒充
+    公司整体毛利率写入正文，prompt 口径纪律 + 驳回重试（两模型各 6 稿实测）
+    均无法扭转。唯一可靠做法是让分项毛利率根本不出现在 writer 输入里——
+    公司整体真值由【比率真值】前置给出，分项毛利率定性描述不依赖具体数字。
+    仅作用于 writer 直写的 prompt 快照，contract 管线与落盘 profile.json 不受影响。
+    """
+    import copy
+
+    data = copy.deepcopy(profile_dict)
+
+    def _walk(node) -> None:
+        if isinstance(node, dict):
+            node.pop("毛利率", None)
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(data)
+    return data
+
+
 def _build_user_prompt(profile_dict: dict, name: str, code: str) -> str:
     """② 快照 + ③ 核对表 + ④ 检索摘要与输出指令。"""
     from ..report_types.overview import _key_facts_brief  # noqa: PLC0415 — 复用既有真值
@@ -112,7 +139,7 @@ def _build_user_prompt(profile_dict: dict, name: str, code: str) -> str:
             + str(research.get("synthesis"))
         )
 
-    snapshot = json.dumps(profile_dict, ensure_ascii=False, default=str)
+    snapshot = json.dumps(_strip_segment_margins(profile_dict), ensure_ascii=False, default=str)
 
     # 比率真值钉死：核对表金额不含比率，LLM 曾反复自行推算毛利率致量级冲突
     # （300184 实测三稿分别写 23.9%/20.0%/23.9%，真值 10.35%），必须前置显式给出。
@@ -135,6 +162,18 @@ def _build_user_prompt(profile_dict: dict, name: str, code: str) -> str:
         else ""
     )
 
+    # 分项毛利率口径纪律：快照中分项「毛利率」字段已由 _strip_segment_margins 剔除
+    # （两模型 6 稿实测证明提示词约束单独无效），此段退为兜底：禁止凭记忆补写分项百分比。
+    ratio_discipline = (
+        "【毛利率口径纪律（违反必被驳回）】\n"
+        "  - 公司整体毛利率/净利率/营收同比增速：只能逐字使用上方【比率真值】，禁止任何推算或改写；\n"
+        "  - 快照未提供分项业务的毛利率数字：任何「XX业务毛利率XX%」的百分比写法一律禁止，\n"
+        "    分项盈利能力只允许定性表述（如「XX业务毛利率显著高于公司整体水平」），严禁编造数字。\n"
+        "【存货等科目口径纪律（违反必被驳回）】\n"
+        "  - 正文提及存货、应收账款等科目金额：只能逐字使用【关键财务事实核对表】中的数值，\n"
+        "    严禁推算、加总、换算或凭记忆补写（qwen-plus 实测曾三稿把 19.45 亿存货写成 49~50 亿）。\n"
+    )
+
     return (
         f"请为 {name}（{code}）生成一份「公司概况分析」完整 HTML 报告。\n\n"
         "【输出要求】\n"
@@ -147,6 +186,7 @@ def _build_user_prompt(profile_dict: dict, name: str, code: str) -> str:
         "- 总长度控制在 12000~20000 字符（含 CSS），优先保证内容完整再优化样式。\n\n"
         f"【关键财务事实核对表（三表直接计算的真值，逐项钉死）】\n{_key_facts_brief(profile_dict)}\n\n"
         + (ratio_txt + "\n\n" if ratio_txt else "")
+        + (ratio_discipline + "\n" if ratio_txt else "")
         + (research_txt + "\n\n" if research_txt else "")
         + f"【六层结构化快照（数字唯一来源）】\n{snapshot}"
     )
@@ -200,11 +240,29 @@ def generate_overview_html(result, profile_dict: dict, name: str, code: str) -> 
 
         html = _strip_fence(resp.text)
         checks: list[str] = []
-        # 1) 基础健全性
+        # 1) 基础健全性（篇幅下限：最初空壳稿约 7K 字符，qwen-turbo 稳定输出 11.2K+，
+        #    下限定 10000 既拦极简稿又不误杀正常稿；300184 实测 11240 字符×3 稿被 12K 误杀后放宽）
         if len(html) < _MIN_HTML_CHARS or "</html>" not in html.lower():
             checks.append(
                 f"输出不是完整 HTML 文档（长度 {len(html)}，"
                 f"{'疑似被 max_tokens 截断' if '</html>' not in html.lower() else '过短'}），须输出完整文档"
+            )
+        elif len(html) < 10000:
+            checks.append(
+                f"内容量不足：当前 {len(html)} 字符，要求 10000 字符以上；"
+                "各层内容须充分展开（业务画像篇幅最重），不得交付极简版"
+            )
+        # 1b) 图表存在性：报告规范要求 Chart.js 4 图表，外链 CDN 不算数，
+        #     必须有内联 <script> 且其中实际调用 Chart(...)，否则财务速写无图
+        #     （独立于篇幅判断，避免长稿漏检图表）
+        if not checks and (
+            "chart.js" not in html.lower() or not re.search(
+                r"<script(?![^>]*\bsrc=)[^>]*>.*?new\s+Chart\s*\(", html, re.S | re.I
+            )
+        ):
+            checks.append(
+                "缺少 Chart.js 图表：须在财务速写等模块用内联 <script> 调用 new Chart(...) "
+                "绘制图表（外链 CDN <script src> 不算图表），红涨绿跌配色"
             )
         if not checks:
             text = _strip_tags(html)

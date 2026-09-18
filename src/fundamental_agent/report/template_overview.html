@@ -35,6 +35,13 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
   .chip{font-size:11.5px;padding:3px 10px;border-radius:999px;background:var(--brand-soft);color:var(--brand);border:1px solid #cfe2f5}
 
+  /* 公开信息补位（非一手来源）与一手来源分层展示 */
+  .tag-pub{display:inline-block;font-size:10px;font-weight:600;color:var(--warn);background:var(--warn-soft);border:1px solid #f6d3b5;border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;white-space:nowrap}
+  .tag-none{display:inline-block;font-size:10px;font-weight:500;color:var(--ink3);background:#f1f3f5;border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;white-space:nowrap}
+  .pub-line{margin-top:4px;font-size:11.5px;color:var(--ink3);line-height:1.6}
+  .txt-generic{font-weight:500;color:var(--ink2)}
+  .sm-note{font-size:11px;color:var(--ink3);margin-top:3px;line-height:1.5}
+
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:16px}
   h2{font-size:17px;font-weight:600;display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
   h2 .num{font-size:12px;color:var(--brand);font-weight:500;font-variant-numeric:tabular-nums}
@@ -117,7 +124,7 @@
 </header>
 
 <div class="card concl" data-page-node-id="np935NfEiKVBevp5YNUfDi">
-  <h2 data-page-node-id="11vYeXiyOOV4nIIkmct4gD"><span class="num" data-page-node-id="AZqwbRlH1VVtARmn6U971g">核心结论</span>一句话看这家公司</h2>
+  <h2 data-page-node-id="11vYeXiyOOV4nIIkmct4gD"><span class="num" data-page-node-id="AZqwbRlH1VVtARmn6U971g">核心结论</span>{{ conclusion_title or '一句话看这家公司' }}</h2>
   <div class="lead" style="border:none;margin-bottom:12px;padding-bottom:0" data-page-node-id="XrBCmEgjL8NAADrNx10QmV">按"实控人性质 + 行业 + 主营 + 增长来源 + 估值坐标 + 核心分歧 + 主要风险"七要素概括</div>
   {{ conclusion_html | blockp }}
   {% if conclusion_note %}<div class="note" style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)" data-page-node-id="c4Nj1MuVxE31bzyQt0QDga">{{ conclusion_note | safe }}</div>{% endif %}
@@ -143,7 +150,7 @@
   </div>
 
   {% if id_insight_html %}<div class="flag" data-page-node-id="xR2Aw4Y2FBUKL78HUOKGJd">
-    <div class="t" data-page-node-id="bKSGlS7sDc4HDpMxofhWua">为什么"实控人性质"这一栏值得单独看</div>
+    <div class="t" data-page-node-id="bKSGlS7sDc4HDpMxofhWua">{{ id_insight_title or '为什么"实控人性质"这一栏值得单独看' }}</div>
     {{ id_insight_html | blockp }}
   </div>{% endif %}
 </div>
@@ -169,16 +176,16 @@
   {% if seg_gap_note %}<div class="note" data-page-node-id="rB9NoDbm9zz4TC3Aw6ZT2d">{{ seg_gap_note }}</div>{% endif %}
 
   {% if business_flag_html %}<div class="flag" data-page-node-id="n7hi4OTiLEBTBjSZXOSZTV">
-    <div class="t" data-page-node-id="yAy7gkJdnNKnEOOF9wc9yT">关键发现：收入占比与利润贡献的错位</div>
+    <div class="t" data-page-node-id="yAy7gkJdnNKnEOOF9wc9yT">{{ business_flag_title or '关键发现：收入占比与利润贡献的错位' }}</div>
     {{ business_flag_html | blockp }}
   </div>{% endif %}
 
   {% if seg_trend %}
-  <h3 data-page-node-id="n3NMP1n86Z9oecyZ9NiGeS">三年分部趋势：一块在改善，一块在恶化</h3>
+  <h3 data-page-node-id="n3NMP1n86Z9oecyZ9NiGeS">{{ seg_trend_title or '三年分部趋势：一块在改善，一块在恶化' }}</h3>
   <table data-page-node-id="BaDRV5ERnbgQ613eV0GF4k">
-    <thead data-page-node-id="4VmCtW1M7eCdF5hax8RIid"><tr data-page-node-id="NfTG1jWLBZuQynPsa9KFud"><th data-page-node-id="aHE2yCeFrUwZvlv9XUWcwO">板块</th>{% for col in seg_trend_cols %}<th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">{{ col.label }}<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">{% if col.is_h1 %}收入{% else %}收入 / 毛利率{% endif %}</th>{% endfor %}<th class="num-c" data-page-node-id="PB9mlo23HSOcOrbNvDM9WB">近期收入</th><th class="num-c" data-page-node-id="GLk6l0zWvvB6CMoq2UDY1v">H1 同比</th></tr></thead>
+    <thead data-page-node-id="4VmCtW1M7eCdF5hax8RIid"><tr data-page-node-id="NfTG1jWLBZuQynPsa9KFud"><th data-page-node-id="aHE2yCeFrUwZvlv9XUWcwO">板块</th>{% for col in seg_trend_cols %}<th class="num-c" data-page-node-id="gU0edMxQvWy973cyMjldy8">{{ col.label }}<br data-page-node-id="HfXwGElQwBbRGY2ndBEz1u">{% if col.is_h1 %}收入{% else %}收入 / 毛利率{% endif %}</th>{% endfor %}{% if seg_trend_has_h1 %}<th class="num-c" data-page-node-id="PB9mlo23HSOcOrbNvDM9WB">近期收入</th><th class="num-c" data-page-node-id="GLk6l0zWvvB6CMoq2UDY1v">H1 同比</th>{% endif %}</tr></thead>
     <tbody data-page-node-id="NvS9eFeaxN3zNERNlxZCaa">
-      {% for r in seg_trend %}<tr class="{% if r.hl %}hl{% endif %}" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo">{% if r.strong %}<strong data-page-node-id="M4iWlD1dFlCjFyiBVd42dt">{% endif %}{{ r.name }}{% if r.strong %}</strong>{% endif %}</td>{% for c in r.cells %}<td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">{{ c }}</td>{% endfor %}<td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">{{ r.recent }}</td><td class="num-c {{ r.cls }}" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">{{ r.yoy }}</td></tr>{% endfor %}
+      {% for r in seg_trend %}<tr class="{% if r.hl %}hl{% endif %}" data-page-node-id="hkRRfopmNeuiWlXxODdciy"><td data-page-node-id="JboK4x1KRUVLzRElm9rifo">{% if r.strong %}<strong data-page-node-id="M4iWlD1dFlCjFyiBVd42dt">{% endif %}{{ r.name }}{% if r.strong %}</strong>{% endif %}</td>{% for c in r.cells %}<td class="num-c" data-page-node-id="uflebaxo3pB8TxqxtTRg10">{{ c }}</td>{% endfor %}{% if seg_trend_has_h1 %}<td class="num-c" data-page-node-id="gNC33bZ383i4YZBLajNWK0">{{ r.recent }}</td><td class="num-c {{ r.cls }}" data-page-node-id="LnoDlGMEqMXKe2q0ZSrpXs">{{ r.yoy }}</td>{% endif %}</tr>{% endfor %}
     </tbody>
   </table>
   {% if seg_trend_note %}<div class="note" data-page-node-id="eRQE9gSmHD40DFGPk6SVlk">{{ seg_trend_note }}</div>{% endif %}
@@ -191,8 +198,8 @@
 
   {% if upstream or upstream_struct or upstream_note or downstream or downstream_fields or customer_conc_html or supplier_conc_html or partners %}
   {% if upstream %}
-  <h3 data-page-node-id="CR72trOiLgFi7nzBE4XnUT">上游：代理了谁的产品线<span class="badge-1st" data-page-node-id="92hDk6R02aJDoPFqAzONPl">{{ bc_source }}</span></h3>
-  <p data-page-node-id="8TFdMeiINlCJFOd67NhDUn">代理权是分销商的生命线。公司代理<strong>上百条国内外原厂线</strong>，按阵营与品类拆分如下（一手来源：公司年报「释义 / 主营业务」章节列示的授权代理原厂品牌）：</p>
+  <h3 data-page-node-id="CR72trOiLgFi7nzBE4XnUT">{{ upstream_title or '上游：代理了谁的产品线' }}<span class="badge-1st" data-page-node-id="92hDk6R02aJDoPFqAzONPl">{{ bc_source }}</span></h3>
+  <p data-page-node-id="8TFdMeiINlCJFOd67NhDUn">{{ upstream_intro or '代理权是分销商的生命线。公司代理上百条国内外原厂线，按阵营与品类拆分如下（一手来源：公司年报「释义 / 主营业务」章节列示的授权代理原厂品牌）：' }}</p>
   <table data-page-node-id="QreFUj1LNVknkgG8nAP4g7">
     <thead data-page-node-id="QmIWcrmy9UGoEehF4h72SL"><tr data-page-node-id="GDfbczKut86hOjZAEh132p"><th style="width:110px" data-page-node-id="gTqtayINbSFJ2rKyE5NlOP">阵营</th><th data-page-node-id="jBcI5NYDHQ90FFpSVHRgvR">主要原厂</th><th style="width:34%" data-page-node-id="WvSDo2n9lc9zc7cK09cZBM">主供品类</th></tr></thead>
     <tbody data-page-node-id="Pfgcy1NNGmOuJYdTTsIJHI">
@@ -201,39 +208,39 @@
   </table>
   {% if upstream_note %}<div class="note" data-page-node-id="Hmf3HqryzMKlwsYS9Eyn0E">{{ upstream_note }}</div>{% endif %}
   {% elif upstream_struct %}
-  <h3 data-page-node-id="CR72trOiLgFi7nzBE4XnUT">上游：供给与供应链结构<span class="badge-1st" data-page-node-id="92hDk6R02aJDoPFqAzONPl">{{ bc_source }}</span></h3>
-  <p data-page-node-id="8TFdMeiINlCJFOd67NhDUn">该公司不属于授权分销模式，上游以采购与供应链/基础设施/技术服务合作为主。以下类别与合作描述提取自定期报告原文：</p>
+  <h3 data-page-node-id="CR72trOiLgFi7nzBE4XnUT">{{ upstream_struct_title or '上游：供给与供应链结构' }}<span class="badge-1st" data-page-node-id="92hDk6R02aJDoPFqAzONPl">{{ bc_source }}</span></h3>
+  <p data-page-node-id="8TFdMeiINlCJFOd67NhDUn">{{ upstream_struct_intro or '该公司不属于授权分销模式，上游以采购与供应链/基础设施/技术服务合作为主。以下类别与合作描述提取自定期报告原文：' }}</p>
   <table data-page-node-id="UpStructTbl0001">
-    <thead data-page-node-id="UpStructThd001"><tr data-page-node-id="UpStructThr001"><th style="width:34%" data-page-node-id="UpStructTh1">上游类别</th><th data-page-node-id="UpStructTh2">供给/合作关系描述</th></tr></thead>
+    <thead data-page-node-id="UpStructThd001"><tr data-page-node-id="UpStructThr001"><th style="width:30%" data-page-node-id="UpStructTh1">上游类别</th><th data-page-node-id="UpStructTh2">供给/合作关系描述</th>{% if upstream_struct_has_suppliers %}<th style="width:30%" data-page-node-id="UpStructTh3">代表企业<span class="tag-pub">公开信息·待核实</span></th>{% endif %}</tr></thead>
     <tbody data-page-node-id="UpStructTbd001">
-      {% for u in upstream_struct %}<tr data-page-node-id="UpStructTr"><td data-page-node-id="UpStructTd1"><strong>{{ u.category }}</strong></td><td data-page-node-id="UpStructTd2">{{ u.detail }}</td></tr>{% endfor %}
+      {% for u in upstream_struct %}<tr data-page-node-id="UpStructTr"><td data-page-node-id="UpStructTd1"><strong>{{ u.category }}</strong></td><td data-page-node-id="UpStructTd2">{{ u.detail }}</td>{% if upstream_struct_has_suppliers %}<td data-page-node-id="UpStructTd3">{% if u.suppliers %}{{ u.suppliers }}<div class="sm-note">{{ u.suppliers_basis }}</div>{% else %}<span class="txt-generic">—</span>{% endif %}</td>{% endif %}</tr>{% endfor %}
     </tbody>
   </table>
-  <div class="note" data-page-node-id="UpStructNote01">上游供给结构取自定期报告一手披露：数据层确定性推导（品类/供应商集中度）或 AI 从原文证据句中受约束提取（quote 已校验），请以原始披露为准。</div>
+  <div class="note" data-page-node-id="UpStructNote01">上游供给结构取自定期报告一手披露：数据层确定性推导（品类/供应商集中度）或 AI 从原文证据句中受约束提取（quote 已校验），请以原始披露为准。{% if upstream_struct_has_suppliers %}「代表企业」列为基于公开产业信息补充的业内公认企业（非公司披露），仅供参照。{% endif %}</div>
   {% endif %}
     {% if supplier_conc_html %}{{ supplier_conc_html | safe }}{% endif %}
   {% if upstream_note %}<div class="note" data-page-node-id="Hmf3HqryzMKlwsYS9Eyn0E">{{ upstream_note }}</div>{% endif %}
 
   {% if downstream or downstream_fields or customer_conc_html or partners %}
-  <h3 data-page-node-id="FlDXOM2Q6cqSDyjb88eXAl">下游：卖给谁<span class="badge-1st" data-page-node-id="5zG2F5qeEAaMvirAbAHNF2">{{ bc_source }}</span></h3>
+  <h3 data-page-node-id="FlDXOM2Q6cqSDyjb88eXAl">{{ downstream_title or '下游：卖给谁' }}<span class="badge-1st" data-page-node-id="5zG2F5qeEAaMvirAbAHNF2">{{ bc_source }}</span></h3>
   {% endif %}
   {% if downstream %}
-  <p data-page-node-id="ir5FEVZKDv6JYDlKNEj7bh">客户网络是第二资产。按应用领域归类（基于年报披露的客户名单动态归纳）：</p>
+  <p data-page-node-id="ir5FEVZKDv6JYDlKNEj7bh">{{ downstream_intro or '客户网络是第二资产。按应用领域归类（基于年报披露的客户名单动态归纳）：' }}</p>
   <table data-page-node-id="TBldnCustTable01">
     <thead data-page-node-id="TBldnCustHead001"><tr data-page-node-id="TBldnCustHeadRow1"><th style="width:104px" data-page-node-id="TBldnCustH1">应用领域</th><th data-page-node-id="TBldnCustH2">代表客户</th><th class="num-c" style="width:110px" data-page-node-id="TBldnCustH3">表现</th><th class="num-c" style="width:76px" data-page-node-id="TBldnCustH4">数据期</th></tr></thead>
     <tbody data-page-node-id="TBldnCustBody001">
-      {% for d in downstream %}<tr class="{% if d.hl %}hl{% endif %}" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>{{ d.field }}</strong></td><td data-page-node-id="TBldnCustC2">{{ d.customers }}</td><td class="num-c {{ d.cls }}" data-page-node-id="TBldnCustC3">{{ d.perf }}</td><td class="num-c" data-page-node-id="TBldnCustC4">{{ d.period }}</td></tr>{% endfor %}
+      {% for d in downstream %}<tr class="{% if d.hl %}hl{% endif %}" data-page-node-id="TBldnCustRow"><td data-page-node-id="TBldnCustC1"><strong>{{ d.field }}</strong></td><td data-page-node-id="TBldnCustC2">{% if d.customers %}{{ d.customers }}{% endif %}{% if d.public_customers %}<div class="pub-line">{{ d.public_customers }}<span class="tag-pub">公开信息·待核实</span></div>{% endif %}</td><td class="num-c {{ d.cls }}" data-page-node-id="TBldnCustC3">{{ d.perf }}</td><td class="num-c" data-page-node-id="TBldnCustC4">{{ d.period }}</td></tr>{% endfor %}
     </tbody>
   </table>
   {% endif %}
   {% if customer_conc_html %}{{ customer_conc_html | safe }}{% endif %}
   {% if partners %}
-  <h3 data-page-node-id="PrtnrNetH3d001">深度合作网络</h3>
-  <p data-page-node-id="PrtnrNetP0001">合作网络是业务模式的直接证据。下列合作方与合作关系均取自公司定期报告的一手披露：</p>
+  <h3 data-page-node-id="PrtnrNetH3d001">{{ partners_title or '深度合作网络' }}</h3>
+  <p data-page-node-id="PrtnrNetP0001">{{ partners_intro or '合作网络是业务模式的直接证据。下列合作方与合作关系均取自公司定期报告的一手披露：' }}</p>
   <table data-page-node-id="PrtnrNetTbl0001">
     <thead data-page-node-id="PrtnrNetThd001"><tr data-page-node-id="PrtnrNetThr001"><th style="width:22%" data-page-node-id="PrtnrNetTh1">合作方</th><th style="width:20%" data-page-node-id="PrtnrNetTh2">合作关系</th><th data-page-node-id="PrtnrNetTh3">合作内容</th></tr></thead>
     <tbody data-page-node-id="PrtnrNetTbd001">
-      {% for p in partners %}<tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong>{{ p.partner }}</strong></td><td data-page-node-id="PrtnrNetTd2">{{ p.relation }}</td><td data-page-node-id="PrtnrNetTd3">{{ p.content }}</td></tr>{% endfor %}
+      {% for p in partners %}<tr data-page-node-id="PrtnrNetTr"><td data-page-node-id="PrtnrNetTd1"><strong{% if not p.named %} class="txt-generic"{% endif %}>{{ p.partner }}</strong>{% if p.src == 'public' %}<span class="tag-pub">公开信息·待核实</span>{% elif not p.named %}<span class="tag-none">原文未具名</span>{% endif %}</td><td data-page-node-id="PrtnrNetTd2">{{ p.relation }}</td><td data-page-node-id="PrtnrNetTd3">{{ p.content }}{% if p.basis %}<div class="sm-note">依据：{{ p.basis }}</div>{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
   {% if partners_note %}<div class="note" data-page-node-id="PrtnrNetNote01">{{ partners_note }}</div>{% endif %}
@@ -271,7 +278,7 @@
   <div class="lead" data-page-node-id="HCkrBn2KfgJQLsDLn2SPeh">A 股语境下的风险高发区：质押、减持、分红能力、审计意见</div>
 
   {% if shareholders %}
-  <h3 data-page-node-id="qDTFXg5MRAHS1jIRzFDYIk">前十大股东{% if shareholders_period %}（{{ shareholders_period }}）{% endif %}</h3>
+  <h3 data-page-node-id="qDTFXg5MRAHS1jIRzFDYIk">{{ shareholders_title }}{% if shareholders_period %}（{{ shareholders_period }}）{% endif %}</h3>
   <table data-page-node-id="56qvZqpzahC2MtuArVkhzd">
     <thead data-page-node-id="MQoMcO3MZkJ7O4IISlGkQ2"><tr data-page-node-id="UisRRAVlI7ymUmDZXW007L"><th data-page-node-id="JS7R9s4IFsDjPlcGu8W3oa">股东名称</th><th data-page-node-id="VtfoVD8YFxjAUwNGZcIfx1">性质</th><th class="num-c" data-page-node-id="uFJwAb5wg9ELHzKDqNAyMw">持股比例</th><th class="num-c" data-page-node-id="mDr71CA3iZRmbqAOhxUQe1">持股数（万股）</th><th class="num-c" data-page-node-id="ZNuZevDIFkxOfXTm0NHT6G">质押/冻结</th></tr></thead>
     <tbody data-page-node-id="CyGecG1wQiwWlIkvrLHMS0">
@@ -281,24 +288,16 @@
   {% if gov_note %}<div class="note" data-page-node-id="WSUaVzJhUPafzYPRxBODTg">{{ gov_note }}</div>{% endif %}
   {% endif %}
 
-  {% if div_metrics %}
   <h3 data-page-node-id="898qpMEAAuvfZMl63C6xfB">分红与股东回报</h3>
+  {% if div_metrics or repurchase_metrics %}
   <div class="grid g3" data-page-node-id="LKb3QO7zxAWjZga6Tn0eAj">
     {% for m in div_metrics %}<div class="metric" data-page-node-id="INgSAAcwGXg4iRDl5jdKPv"><div class="lab" data-page-node-id="EBZBwfeQO3mbofAwlrjkWm">{{ m.lab }}</div><div class="val"{% if m.size %} style="font-size:{{ m.size }}px"{% endif %} data-page-node-id="TtjEfRCCdyRQn0BAl6LMJ0">{{ m.val }}</div><div class="note" data-page-node-id="4D6b2G9ntI28Y2lo8wqw4z">{{ m.note }}</div></div>{% endfor %}
+    {% for m in repurchase_metrics %}<div class="metric" data-page-node-id="Qn7xT2vBc8mRk4LpWz3jFdG"><div class="lab" data-page-node-id="Zm5vC9nQx2wLb7TkRj4hGyH">回购·{{ m.lab }}</div><div class="val"{% if m.size %} style="font-size:{{ m.size }}px"{% endif %} data-page-node-id="Tc4bX8nVm2qLk6RwPj9sZuJ">{{ m.val }}</div><div class="note" data-page-node-id="Bn3mQ7vTx5wLc8RkJh2zYdK">{{ m.note }}</div></div>{% endfor %}
   </div>
-  {% if div_text %}<div style="margin-top:12px" data-page-node-id="W1IRentHCY8nXkeHT7ATDb">{{ div_text | blockp }}</div>{% endif %}
   {% else %}
-  <h3 data-page-node-id="898qpMEAAuvfZMl63C6xfB">分红与股东回报</h3>
-  <div class="note" data-page-node-id="W1IRentHCY8nXkeHT7ATDe">未获取分红送配数据（该公司或无分红记录，或数据源暂缺；如为年报口径缺口，见「股份回购」与公司公告）。</div>
+  <div class="note" data-page-node-id="W1IRentHCY8nXkeHT7ATDe">未获取分红送配数据（该公司或无分红记录，或数据源暂缺；回购实施情况以公司公告为准）。</div>
+  {% endif %}
   {% if div_text %}<div style="margin-top:12px" data-page-node-id="W1IRentHCY8nXkeHT7ATDb">{{ div_text | blockp }}</div>{% endif %}
-  {% endif %}
-
-  {% if repurchase_metrics %}
-  <h3 data-page-node-id="Rp8hKq2mZ4nT7vXbN1cQdE">股份回购</h3>
-  <div class="grid g3" data-page-node-id="Kp2wNv5tLx9mQr3ZbY6sHaF">
-    {% for m in repurchase_metrics %}<div class="metric" data-page-node-id="Qn7xT2vBc8mRk4LpWz3jFdG"><div class="lab" data-page-node-id="Zm5vC9nQx2wLb7TkRj4hGyH">{{ m.lab }}</div><div class="val"{% if m.size %} style="font-size:{{ m.size }}px"{% endif %} data-page-node-id="Tc4bX8nVm2qLk6RwPj9sZuJ">{{ m.val }}</div><div class="note" data-page-node-id="Bn3mQ7vTx5wLc8RkJh2zYdK">{{ m.note }}</div></div>{% endfor %}
-  </div>
-  {% endif %}
   {% if repurchase_text %}<div style="margin-top:12px" data-page-node-id="Wm8nQ3vBx6tLk9RcZj5hPdL">{{ repurchase_text | blockp }}</div>{% endif %}
 
   {% if controller_metrics %}

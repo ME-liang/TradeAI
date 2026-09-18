@@ -399,6 +399,10 @@ def build_profile(result: AnalysisResult) -> dict:
             # 前十大股东名册：最新定期报告披露口径（含股东性质/总持股/质押数量），
             # 优先于东财流通快照口径的 holders（渲染层判断）
             "report_holders": p.get("report_holders") or None,
+            # 股东表口径标签（名册 / 东财十大股东 / 东财流通股东）：由 main.py 统一判定后
+            # 落库，渲染层据此决定表头与脚注——防止「流通口径数据配『前十大股东』表头」
+            # 这类名不副实的无声降级（2026-09-16 翻车点）。
+            "holders_caliber": p.get("holders_caliber") or "",
             "share_capital": _cap,
             "dividend": p.get("dividend") or [],
             # 股份回购实施结果：一手来源为年报 PDF 抽取（main.py 注入 profile["repurchase"]）。

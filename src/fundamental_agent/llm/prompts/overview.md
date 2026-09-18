@@ -31,13 +31,20 @@
    `risks_left`、`risks_right`、`risk_emphasis`、`moat`、`events`、`business_constraints`、
    `upstream_note`、`downstream_note`。输入数据已包含这些字段所需的事实（营收、毛利率、股东、
    质押、同业 ROE 等），请据此成段表述，而非以「无依据」为由置空；   若确属未知，再写 `未获取`。
+   **`report_date` / `as_of_text` 由系统生成，禁止填写**：报告日期恒为系统生成当日，
+   数据时点说明由系统按行情日期拼装；即使输出这两个字段也会被系统整体丢弃
+   （实测有模型把输入数据里主营构成的「报告日期」当成本报告日期回填，导致页眉日期错乱）。
 
-8. **上游 / 下游 / 增长空间 / 行业坐标 四节允许「非一手来源」**：`upstream`、`downstream`、`growth`
+8. **上游 / 下游 / 增长空间 / 行业坐标 四节允许「非一手来源」**：`downstream`、`growth`
    （及其 `upstream_note` / `downstream_note`）与 `peers_note` 可由你基于公开信息（行业研报、公司公告、
    媒体转述、产业链常识）生成，**非公司一手披露**。系统会在对应小节标题处统一标注「非一手来源·待核实」，
    你无需在正文重复该标签，但须：①尽量有据可依，优先引用可公开查证的事实；
    ②对不确定的具体数字 / 份额用「（待核实）」标注；③严禁编造精确数值
    （如「占某原厂代理份额 37.2%」这类无来源数字一律不得出现）。
+   **`upstream` 阵营表禁止由你填写**：该表只来自定期报告「释义 / 主营业务」章节的授权代理
+   一手抽取，你不掌握授权代理名单；即使输出该字段也会被系统整体丢弃（实测有模型把供应商
+   依赖关系填进该表，导致非分销商公司误渲染分销商版式）。非分销商公司的上游供给关系
+   请写入 `upstream_note` 表述。
    `growth` 须给出分层次的赛道与空间判断（非空列表），与 `upstream_note` / `downstream_note` 同为必填。
    **`downstream` 客户表专项约束**：`field` 用输入数据 `downstream_raw` 原文中出现的行业词
    （如「AI 算力」「智能电网」——以原文为准，不得自创领域名）；`customers` 只能从
@@ -70,8 +77,6 @@
   "name": "示例·公司简称",
   "code": "示例·股票代码，如 300184",
   "full_name": "示例·公司全称",
-  "report_date": "示例·报告日期 YYYY-MM-DD",
-  "as_of_text": "示例·数据时点说明",
   "badges": ["示例·深交所创业板", "示例·申万一级：电子"],
 
   "conclusion_html": "示例·<p>核心结论段落（七要素概括，可含 <strong>）</p>",
@@ -95,7 +100,6 @@
   "business_flag_html": "示例·<p>收入占比与利润贡献错位分析（可含 <ul><li>）</p>",
   "seg_trend": [], "seg_trend_labels": [], "seg_trend_note": "",
   "self_dev": {"labels": [], "revenue": [], "margin": []}, "self_dev_note": "",
-  "upstream": [{"camp":"示例·日系（核心）","makers":"示例·原厂 A、原厂 B","category":"示例·MLCC、电感","hl":true}],
   "upstream_note": "示例·供应商集中度说明",
   "downstream": [{"field":"示例·应用领域","customers":"示例·代表客户","perf":"示例·近期表现","hl":true,"cls":"up"}],
   "partners": [{"partner":"示例·合作方名","relation":"示例·上游芯片原厂 · 授权代理 / 联合/战略合作","content":"示例·合作内容（须摘自输入数据语料原文）"}],
