@@ -423,14 +423,23 @@ def _kline_eastmoney(code, klt, n):
     if not klines:
         raise RuntimeError("东方财富K线: 返回为空")
     klines = klines[-n:] if len(klines) > n else klines
-    dates, candle, vols = [], [], []
+    dates, candle, vols, amounts = [], [], [], []
     for k in klines:
         p = k.split(",")
         o, c, h, l, v = float(p[1]), float(p[2]), float(p[3]), float(p[4]), float(p[5])
         dates.append(p[0][:10])
         candle.append([o, c, l, h])
         vols.append(int(float(v)))
-    return {"dates": dates, "candle": candle, "vols": vols}
+        # f57 = 成交额(元)。东财是唯一提供逐根成交额的源；字段缺失记 None，
+        # 由前端决定「用真值」还是「标注为估算」——不在此处编造数据。
+        try:
+            amounts.append(float(p[6]))
+        except (IndexError, ValueError):
+            amounts.append(None)
+    out = {"dates": dates, "candle": candle, "vols": vols}
+    if amounts and all(a is not None for a in amounts):
+        out["amounts"] = amounts          # 真实逐根成交额(元)
+    return out
 
 
 def _kline_tencent(code, klt, n):

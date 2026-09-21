@@ -98,6 +98,40 @@
   .kchange[data-up="1"]{background:#FFEBEA;color:#D8392F}
   .kchange[data-up="0"]{background:#E8F5EE;color:#1B9E5A}
   .karrows{display:flex;gap:8px}
+  .kctrl{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  /* ===== 区间统计：按钮 / 图上双竖线覆盖层 / 结果面板 ===== */
+  .rangebtn{background:#fff;color:var(--ink);font-family:inherit;font-size:14px;font-weight:500;border:none;border-radius:16px;height:32px;padding:0 16px;cursor:pointer;transition:all .15s;white-space:nowrap}
+  .rangebtn:hover:not(:disabled){background:#ECECEC}
+  .rangebtn.active{background:var(--blue);color:#fff;font-weight:600}
+  .rangebtn:disabled{opacity:.4;cursor:not-allowed}
+  /* 覆盖层：整层不吃事件, 只有两条线的热区可拖, 因此不影响 K 线本身的缩放/悬停 */
+  .rlayer{position:absolute;inset:0;pointer-events:none;z-index:2}
+  .rband{position:absolute;background:rgba(0,113,227,.07);border-top:1px solid rgba(0,113,227,.18);border-bottom:1px solid rgba(0,113,227,.18)}
+  .rline{position:absolute;width:0;top:0}
+  .rline::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--blue)}
+  .rline.dragging::before{background:#004A99;box-shadow:0 0 0 1px rgba(0,113,227,.35)}
+  .rhit{position:absolute;left:-9px;top:0;bottom:0;width:19px;cursor:ew-resize;pointer-events:auto;touch-action:none}
+  .rhandle{position:absolute;left:-6px;top:0;width:13px;height:13px;border-radius:3px;background:var(--blue);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.28);pointer-events:none}
+  .rhandle::after{content:'';position:absolute;left:3px;right:3px;top:3.5px;height:2.5px;background:rgba(255,255,255,.9);border-radius:2px}
+  .rtag{position:absolute;top:0;transform:translate(-50%,-100%);padding:1px 6px;border-radius:5px;background:var(--blue);color:#fff;
+    font-size:11px;font-weight:600;font-family:"Inter";white-space:nowrap;pointer-events:none;line-height:16px}
+  /* 终点用中性深灰而非绿色：绿色在 A 股语境表示「跌」, 不宜用作角色色 */
+  .rtag.end{background:#3A3A3C}
+  .rangepanel{margin-top:14px;background:#fff;border-radius:12px;padding:14px 16px}
+  .rangehead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .rangedates{font-size:14px;font-weight:600;font-family:"Inter"}
+  .rangebars{font-size:12.5px;color:var(--mut)}
+  .rangegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .rstat .l{font-size:12.5px;color:var(--mut);margin-bottom:4px}
+  .rstat .v{font-size:17px;font-weight:700;font-family:"Inter"}
+  .rstat .v.up{color:#D8392F}
+  .rstat .v.down{color:#1B9E5A}
+  .rstat .v .est{font-size:11px;font-weight:600;color:var(--mut);margin-right:2px}
+  .rangehint{font-size:12px;color:var(--mut);margin-top:10px;line-height:1.6}
+  @media (max-width:760px){
+    .rangegrid{grid-template-columns:repeat(2,1fr);gap:12px}
+    .kctrl{width:100%;justify-content:space-between;order:1}
+  }
   .karrow{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;touch-action:none;font-size:22px;font-weight:700;line-height:1}
   .karrow:hover:not(:disabled){background:var(--blue);border-color:var(--blue);color:#fff}
   .karrow:disabled{opacity:.35;cursor:not-allowed}
@@ -170,7 +204,9 @@
       </div>
       <div class="kpanerow">
         <span><span class="krange" id="kRange">—</span><span class="kchange" id="kChange">—</span><span class="kdemo" id="kDemo" hidden>行情接口不可用，当前为演示数据</span></span>
-        <div class="karrows">
+        <div class="kctrl">
+          <button type="button" class="rangebtn" id="rangeBtn" aria-pressed="false" title="在图上拖动两条竖线统计区间行情">区间统计</button>
+          <div class="karrows">
           <button class="karrow" id="zoomIn" title="放大：显示更详细的K线" aria-label="放大">+</button>
           <button class="karrow"  id="panLeft" title="向前：查看更早的数据" aria-label="向前查看更多历史">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
@@ -179,9 +215,25 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </button>
           <button class="karrow" id="zoomOut" title="缩小：显示更宽的时间范围" aria-label="缩小">-</button>
+          </div>
         </div>
       </div>
       <div id="chart"></div>
+      <!-- 区间统计结果：位于图表正下方，拖动竖线时整行实时刷新 -->
+      <div class="rangepanel" id="rangePanel" hidden>
+        <div class="rangehead">
+          <span class="rangedates" id="rDates">—</span>
+          <span class="rangebars" id="rBars">—</span>
+        </div>
+        <div class="rangegrid">
+          <div class="rstat"><div class="l">区间涨幅</div><div class="v" id="rChg">—</div></div>
+          <div class="rstat"><div class="l">最高价</div><div class="v" id="rHigh">—</div></div>
+          <div class="rstat"><div class="l">最低价</div><div class="v" id="rLow">—</div></div>
+          <div class="rstat"><div class="l">振幅</div><div class="v" id="rAmp">—</div></div>
+          <div class="rstat"><div class="l">区间成交额</div><div class="v" id="rAmt">—</div></div>
+        </div>
+        <div class="rangehint" id="rHint">拖动图中两条竖线调整区间；两线交叉时自动判定起点/终点。</div>
+      </div>
     </div>
 
     <div class="nav" id="nav">
@@ -482,6 +534,16 @@ let chart=null;
 var CN_OHLC=['开盘','收盘','最低','最高'];
 // 当前窗口每根 K 线的涨跌幅(%), 由 renderChart 从全量收盘价算出后切片
 var winChangePct=[];
+// 当前窗口每根 K 线的「至今涨幅」(%), 同上——从该根 K 线收盘价到最新交易日收盘价
+var winToNowPct=[];
+// tooltip 里涨跌幅/至今涨幅两行共用同一套标记与样式, 保证展示完全一致
+function pctRowHtml(label,val){
+  if(val===null||val===undefined||isNaN(val)) return '';
+  var up=val>=0, col=up?UP:DOWN;
+  return '<div style="margin: 10px 0 0;line-height:1;">'+
+    '<span style="font-size:14px;color:'+col+';font-weight:400;margin-left:2px">'+label+'</span>'+
+    '<span style="font-size:14px;color:'+col+';font-weight:600;margin-left:14px">'+(up?'+':'')+val.toFixed(2)+'%</span></div>';
+}
 function tooltipFormatter(ps){
   if(!ps||!ps.length) return '';
   var html='<div style="margin:0;line-height:1;">'+ps[0].axisValueLabel+'</div>';
@@ -503,14 +565,9 @@ function tooltipFormatter(ps){
       }
       // 涨跌幅(相对前一交易日收盘价)
       var pct=winChangePct[p.dataIndex];
-      if(pct!==null&&pct!==undefined&&!isNaN(pct)){
-        var isUp=pct>=0;
-        var pctColor=isUp?UP:DOWN;
-        var pctText=(isUp?'+':'')+pct.toFixed(2)+'%';
-        extraHtml='<div style="margin: 10px 0 0;line-height:1;">'+
-          '<span style="font-size:14px;color:'+pctColor+';font-weight:400;margin-left:2px">涨跌幅</span>'+
-          '<span style="font-size:14px;color:'+pctColor+';font-weight:600;margin-left:14px">'+pctText+'</span></div>';
-      }
+      // 至今涨幅(相对最新交易日收盘价) 紧随其下, 样式与涨跌幅一致
+      var toNow=winToNowPct[p.dataIndex];
+      extraHtml=pctRowHtml('涨跌幅',pct)+pctRowHtml('至今涨幅',toNow);
     }else{
       var vv=(p.value&&typeof p.value==='object'&&'value' in p.value)?p.value.value:p.value;
       rows.push([p.seriesName,(vv===null||vv===undefined||vv==='')?'-':vv]);
@@ -529,6 +586,7 @@ function fetchKline(){
   const cfg=PERIOD[state.period];
   if(kcache[state.period]){ resetWindow(); renderChart(); return; }
   const box=document.getElementById('chart'); if(box) box.classList.add('loading');
+  rsSyncBtn();   // 新周期数据未到位前禁用「区间统计」
   fetch(API_KLINE + '?code=' + encodeURIComponent(CODE) + '&klt=' + cfg.klt + '&n=' + cfg.fetchN)
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(d=>{
@@ -586,6 +644,16 @@ function renderChart(animate){
     });
   }
   winChangePct = full._changePct.slice(s, e);
+  // 每根K线的「至今涨幅」(%): (最新收盘 - 该根收盘) / 该根收盘 * 100
+  // 基准取**全量数据的最后一根收盘价**(不是当前窗口末根), 否则左右平移/缩放窗口时
+  // 「至今」的含义会随之变化; 最后一根自身为 0.00%。
+  if(!full._toNowPct){
+    var _lastClose=fullClose[fullClose.length-1];
+    full._toNowPct = fullClose.map(function(c){
+      return (c && _lastClose) ? ((_lastClose-c)/c*100) : null;
+    });
+  }
+  winToNowPct = full._toNowPct.slice(s, e);
   const showMacd=state.macd, showVol=state.vol;
   const showMain = state.ma || state.boll || !(showMacd || showVol);
   // 子图布局: 主图 + 可选副图; MACD/成交量独占时, 副图占满全屏(主K线隐藏)
@@ -669,6 +737,281 @@ function renderChart(animate){
   const zIn=document.getElementById('zoomIn'), zOut=document.getElementById('zoomOut');
   if(zIn) zIn.disabled = (cfg.win<=WIN_MIN);
   if(zOut) zOut.disabled = (cfg.win>=cfg.fetchN);
+  // 区间统计：重绘后重新贴回两条竖线（窗口/周期/指标变化都会走到这里）
+  rsSyncBtn();
+  rsAfterRender();
+}
+
+// 数据不足(未加载 / 只有 1 根 K 线)时禁用「区间统计」按钮
+function rsSyncBtn(){
+  var btn=document.getElementById('rangeBtn');
+  if(!btn) return;
+  var ok=!!rsWin();
+  btn.disabled=!ok;
+  if(!ok && RS.on) rsSetOn(false);
+}
+
+/* =====================================================================
+   区间统计（交互参考同花顺 APP）
+   · 图上两条可拖动竖线界定统计区间，拖动过程中下方指标面板实时刷新
+   · 区间以「全量数据的绝对下标」存储 —— 平移/缩放后仍锁定同一批 K 线
+   · 区间取两线的 min/max，所以「起点晚于终点」不会产生无效状态：交叉即互换角色
+   · 至少间隔 1 根 K 线（区间内≥2 根），避免出现无意义的单根区间
+   ===================================================================== */
+var RS={ on:false, a:0, b:0, period:'', ui:null, drag:null, raf:0 };
+
+// 当前窗口信息（全量数组 + 可见下标区间）
+function rsWin(){
+  var full=kcache[state.period];
+  if(!full||!full.dates||full.dates.length<2) return null;
+  var cfg=PERIOD[state.period];
+  var s=viewStart, e=Math.min(full.dates.length, s+cfg.win);
+  if(e-s<2) return null;
+  return {full:full, s:s, e:e, n:e-s};
+}
+// 类目下标(窗口内) -> 像素
+function rsX(j){ try{ return chart.convertToPixel({xAxisIndex:0}, j); }catch(e){ return null; } }
+// 像素 -> 全量绝对下标（钳制到可见窗口内；用首末类目中心反推带宽, 不依赖内部 API）
+function rsIdxAtPx(px){
+  var w=rsWin(); if(!w) return null;
+  var x0=rsX(0), x1=rsX(w.n-1);
+  if(x0===null||x1===null) return null;
+  var band=(x1-x0)/(w.n-1);
+  if(!band) return null;
+  var j=Math.round((px-x0)/band);
+  j=Math.max(0, Math.min(w.n-1, j));
+  return w.s+j;
+}
+// 绘图区矩形（取不到坐标系时退化为容器盒）
+function rsGridRect(){
+  var box=document.getElementById('chart');
+  var W=box?box.clientWidth:800, H=box?box.clientHeight:420;
+  try{
+    var r=chart.getModel().getComponent('grid',0).coordinateSystem.getRect();
+    if(r&&r.width>8&&r.height>8) return {left:r.x, right:r.x+r.width, top:r.y, bottom:r.y+r.height};
+  }catch(e){}
+  return {left:0, right:W, top:6, bottom:Math.max(40, H-8)};
+}
+
+function rsEnsureUI(){
+  var host=document.getElementById('chart');
+  if(!host) return null;
+  if(RS.ui && RS.ui.root && RS.ui.root.parentNode===host) return RS.ui;
+  var root=document.createElement('div');
+  root.className='rlayer';
+  root.innerHTML='<div class="rband"></div>'+
+    '<div class="rline rline-a"><div class="rhit"></div><div class="rhandle"></div><div class="rtag"></div></div>'+
+    '<div class="rline rline-b"><div class="rhit"></div><div class="rhandle"></div><div class="rtag"></div></div>';
+  host.appendChild(root);
+  var ui={ root:root, band:root.querySelector('.rband'),
+           a:root.querySelector('.rline-a'), b:root.querySelector('.rline-b') };
+  ui.tagA=ui.a.querySelector('.rtag'); ui.tagB=ui.b.querySelector('.rtag');
+  RS.ui=ui;
+  rsBindDrag(ui.a, 0); rsBindDrag(ui.b, 1);
+  return ui;
+}
+
+// 拖动：PointerEvent + setPointerCapture —— 指针移出竖线/图表也持续跟随, 松手即结束
+function rsBindDrag(lineEl, which){
+  lineEl.addEventListener('pointerdown', function(e){
+    if(e.button!==undefined && e.button!==0) return;         // 仅左键/触摸主键
+    e.preventDefault(); e.stopPropagation();                 // 不触发图表自身的拖动/缩放
+    RS.drag={which:which};
+    lineEl.classList.add('dragging');
+    try{ lineEl.setPointerCapture(e.pointerId); }catch(_){}
+    if(chart){ try{ chart.dispatchAction({type:'hideTip'}); chart.setOption({tooltip:{show:false}}); }catch(_){} }
+  });
+  lineEl.addEventListener('pointermove', function(e){
+    if(!RS.drag || RS.drag.which!==which) return;
+    e.preventDefault(); e.stopPropagation();
+    var host=document.getElementById('chart');
+    var rect=host.getBoundingClientRect();
+    var idx=rsIdxAtPx(e.clientX-rect.left);
+    if(idx===null) return;
+    rsSetIdx(which, idx);
+  });
+  function finish(e){
+    if(!RS.drag || RS.drag.which!==which) return;
+    RS.drag=null;
+    lineEl.classList.remove('dragging');
+    try{ lineEl.releasePointerCapture(e.pointerId); }catch(_){}
+    if(chart){ try{ chart.setOption({tooltip:{show:true}}); }catch(_){} }
+  }
+  lineEl.addEventListener('pointerup', finish);
+  lineEl.addEventListener('pointercancel', finish);
+}
+
+// 写入某一端的新下标：① 越界：钳制在当前可见窗口内
+// ② 两线可交叉（交叉后由 min/max 判定起终点，区间始终有效，不存在「起点晚于终点」的无效态）
+// ③ 不可完全重合：与另一端重合时停在相邻一根，保证区间至少 2 根 K 线
+function rsSetIdx(which, idx){
+  var w=rsWin(); if(!w) return;
+  var lo=w.s, hi=w.e-1;
+  idx=Math.max(lo, Math.min(hi, idx));
+  var other=(which===0)?RS.b:RS.a;
+  if(idx===other){
+    idx=other+((other>lo)?-1:1);
+    idx=Math.max(lo, Math.min(hi, idx));
+    if(idx===other){ rsSchedule(); return; }   // 窗口极窄(仅 2 根)时保持不动
+  }
+  if(which===0) RS.a=idx; else RS.b=idx;
+  rsSchedule();
+}
+
+// 区间锚定在「全量数据的下标」上：**平移/缩放只改可见窗口, 绝不改动区间本身**。
+// 只做两件保护：①钳到数据集下标范围内（切周期后旧下标可能超界）；②区间退化时重置为整窗。
+// （此前这里会把区间钳进可见窗口, 导致平移时端点被窗口边界拖着走、统计值随之变化。）
+function rsClampToData(){
+  var w=rsWin(); if(!w) return false;
+  var last=w.full.dates.length-1;
+  var a=Math.max(0, Math.min(last, RS.a));
+  var b=Math.max(0, Math.min(last, RS.b));
+  var changed=(a!==RS.a || b!==RS.b);
+  RS.a=a; RS.b=b;
+  if(Math.abs(RS.b-RS.a)<1){ a=w.s; b=w.e-1; RS.a=a; RS.b=b; changed=true; }
+  return changed;
+}
+
+function rsStats(){
+  var w=rsWin(); if(!w) return null;
+  var full=w.full, A=Math.min(RS.a,RS.b), B=Math.max(RS.a,RS.b);
+  A=Math.max(0, A); B=Math.min(full.dates.length-1, B);
+  if(A>B) return null;
+  var closes=full._close || (full.candle||[]).map(function(c){ return c[1]; });
+  var cA=closes[A], cB=closes[B];
+  var chg=(cA? (cB-cA)/cA*100 : null);                     // 区间涨幅 = (末根收盘-首根收盘)/首根收盘
+  var hi=-Infinity, lo=Infinity, est=0, hasVol=false;
+  for(var i=A;i<=B;i++){
+    var cd=full.candle[i]; if(!cd) continue;
+    var o=cd[0], c=cd[1], l=cd[2], h=cd[3];
+    if(h>hi) hi=h;
+    if(l<lo) lo=l;
+    var v=full.vols?full.vols[i]:null;
+    if(v!==null&&v!==undefined){ hasVol=true; est += v*100*((h+l+c)/3); }   // 手→股, 乘典型价
+  }
+  // 成交额：优先用数据源的真实逐根成交额; 无则用「成交量×典型价」估算并在 UI 标注
+  var amt=null, real=false;
+  if(full.amounts && full.amounts.length===full.dates.length){
+    var s2=0, ok=true;
+    for(var k=A;k<=B;k++){ var x=full.amounts[k]; if(x===null||x===undefined){ ok=false; break; } s2+=x; }
+    if(ok){ amt=s2; real=true; }
+  }
+  if(!real && hasVol) amt=est;
+  return {a:A, b:B, bars:B-A+1, chg:chg, high:(hi===-Infinity?null:hi), low:(lo===Infinity?null:lo),
+          amp:((lo!==Infinity&&lo>0&&hi>-Infinity)?(hi-lo)/lo*100:null), amt:amt, real:real,
+          d0:full.dates[A], d1:full.dates[B]};
+}
+
+function rsFmtPrice(v){ return (v===null||v===undefined||!isFinite(v))?'—':v.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function rsFmtPct(v, sign){ return (v===null||v===undefined||!isFinite(v))?'—':((sign&&v>=0?'+':'')+v.toFixed(2)+'%'); }
+function rsFmtMoney(v){
+  if(v===null||v===undefined||!isFinite(v)) return '—';
+  if(Math.abs(v)>=1e8) return (v/1e8).toFixed(2)+'亿';
+  if(Math.abs(v)>=1e4) return (v/1e4).toFixed(2)+'万';
+  return v.toFixed(0);
+}
+
+// 位置 + 数值一次刷完（拖动时由 rAF 合帧, 一帧最多算一次）
+function rsRender(){
+  if(!RS.on) return;
+  var w=rsWin(); if(!w) return;
+  rsClampToData();
+  var ui=rsEnsureUI(); if(!ui) return;
+  var g=rsGridRect(), H=Math.max(10, g.bottom-g.top);
+  var aFirst = RS.a<=RS.b;
+  // 端点是否落在当前可见窗口内：窗口外的竖线**隐藏**（区间锁定在 K 线上, 平移时随之滚出视野,
+  // 而不是被钉在窗口边缘跟着走）
+  function inWin(idx){ return idx>=w.s && idx<=w.e-1; }
+  function placeLine(el, tag, idx, isEnd){
+    if(!inWin(idx)){ el.style.display='none'; return false; }
+    var x=rsX(idx-w.s);
+    if(x===null || x<g.left-1 || x>g.right+1){ el.style.display='none'; return false; }
+    el.style.display='block';
+    el.style.top=g.top+'px'; el.style.height=H+'px'; el.style.left=x+'px';
+    tag.textContent=(isEnd?'止 ':'起 ')+w.full.dates[idx];
+    tag.classList.toggle('end', isEnd);
+    return true;
+  }
+  var visA=placeLine(ui.a, ui.tagA, RS.a, !aFirst);
+  var visB=placeLine(ui.b, ui.tagB, RS.b,  aFirst);
+  // 阴影带：区间与可见窗口的交集；被裁掉的一侧贴到绘图区边缘
+  var lo=Math.min(RS.a,RS.b), hi=Math.max(RS.a,RS.b);
+  var cA=Math.max(lo, w.s), cB=Math.min(hi, w.e-1);
+  if(cA<=cB){
+    var x1=(lo<w.s)      ? g.left  : rsX(cA-w.s);
+    var x2=(hi>w.e-1)    ? g.right : rsX(cB-w.s);
+    if(x1!==null&&x2!==null){
+      x1=Math.max(g.left, Math.min(g.right, x1));
+      x2=Math.max(g.left, Math.min(g.right, x2));
+      ui.band.style.display='block';
+      ui.band.style.top=g.top+'px'; ui.band.style.height=H+'px';
+      ui.band.style.left=Math.min(x1,x2)+'px';
+      ui.band.style.width=Math.abs(x2-x1)+'px';
+    }else{ ui.band.style.display='none'; }
+  }else{
+    ui.band.style.display='none';               // 区间整体在视野之外
+  }
+  // 指标面板
+  var st=rsStats(); if(!st) return;
+  var el=function(id){ return document.getElementById(id); };
+  if(el('rDates')) el('rDates').textContent=st.d0+' ~ '+st.d1;
+  if(el('rBars')) el('rBars').textContent='共 '+st.bars+' 根 K 线';
+  var c=el('rChg');
+  if(c){ c.textContent=rsFmtPct(st.chg, true);
+         c.classList.toggle('up', st.chg!==null&&st.chg>=0);
+         c.classList.toggle('down', st.chg!==null&&st.chg<0); }
+  if(el('rHigh')) el('rHigh').textContent=rsFmtPrice(st.high);
+  if(el('rLow')) el('rLow').textContent=rsFmtPrice(st.low);
+  if(el('rAmp')) el('rAmp').textContent=rsFmtPct(st.amp, false);
+  var am=el('rAmt');
+  if(am){ am.innerHTML=(st.real?'':'<span class="est">≈</span>')+rsFmtMoney(st.amt); }
+  var hint=el('rHint');
+  if(hint){
+    var outTxt=(!visA || !visB)
+      ? '区间已锁定在所选 K 线上，当前有边界滚出视野（不代表区间变了），左右平移即可找回。'
+      : '';
+    hint.textContent='拖动图中两条竖线调整区间（两线交叉会自动判定起点/终点；区间至少 2 根 K 线）。'+outTxt
+      +(st.real ? '区间成交额为数据源逐根成交额之和。'
+                : '当前行情源不提供逐根成交额，带「≈」的结果为估算值（成交量×典型价，仅作量级参考）。');
+  }
+}
+function rsSchedule(){
+  if(RS.raf) return;
+  RS.raf=requestAnimationFrame(function(){ RS.raf=0; rsRender(); });
+}
+// 图表重绘(平移/缩放/切周期/切指标/自适应)后的重新贴线。
+// 平移/缩放**不改动区间**（区间锚定 K 线, 顶多滚出视野被隐藏）；
+// 只有切周期时下标口径变了, 才重置为整窗。
+function rsAfterRender(){
+  if(!RS.on) return;
+  var w=rsWin(); if(!w) return;
+  if(RS.period!==state.period){
+    RS.period=state.period;
+    RS.a=w.s; RS.b=w.e-1;
+  }
+  rsClampToData();
+  rsSchedule();
+}
+function rsSetOn(on){
+  on=!!on;
+  if(on && !rsWin()) on=false;                    // 数据不足(未加载/仅 1 根)时不开启
+  RS.on=on;
+  var btn=document.getElementById('rangeBtn');
+  if(btn){ btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', on?'true':'false'); }
+  var panel=document.getElementById('rangePanel');
+  if(panel) panel.hidden=!on;
+  if(on){
+    var w=rsWin();
+    RS.a=w.s; RS.b=w.e-1;                          // 默认统计「当前可见的全部 K 线」
+    RS.period=state.period;
+    var ui=rsEnsureUI();
+    if(ui) ui.root.style.display='block';
+    rsRender();
+  }else{
+    RS.drag=null;
+    if(RS.ui) RS.ui.root.style.display='none';
+    if(chart){ try{ chart.setOption({tooltip:{show:true}}); }catch(_){} }
+  }
 }
 
 function panKline(dir){
@@ -1337,10 +1680,17 @@ function fetchNews(){
     });
 }
 
+// ===== 区间统计：按钮绑定（数据未就绪时禁用） =====
+(function(){
+  var btn=document.getElementById('rangeBtn');
+  if(btn) btn.addEventListener('click', function(){ rsSetOn(!RS.on); });
+  rsSyncBtn();
+})();
+
 // ===== 启动 =====
 fetchStock();
 fetchKline();
-window.addEventListener('resize',()=>{if(chart)chart.resize();});
+window.addEventListener('resize',()=>{ if(chart){ chart.resize(); } rsAfterRender(); });
 </script>
 </body>
 </html>
