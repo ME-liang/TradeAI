@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TradeAI · 我的自选</title>
+<style>
+  :root{
+    --bg:#F5F5F7;
+    --card:#FFFFFF;
+    --ink:#1D1D1F;
+    --sub:#6E6E73;
+    --muted:#86868B;
+    --blue:#0071E3;
+    --blue-soft:#EAF2FC;
+    --blue-ink:#0071E3;
+    --up:#D8392F;          /* 涨 红（A 股口径） */
+    --down:#1AA05A;        /* 跌 绿 */
+    --search-bg:#F5F7FA;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);
+    display:flex;justify-content:center;padding:48px 16px;
+  }
+  .page{width:100%;max-width:1200px;background:var(--card);border-radius:24px;padding:56px 48px;}
+  .breadcrumb{font-size:14px;color:var(--muted);font-weight:500;margin-bottom:8px;}
+  a.breadcrumb{text-decoration:none;display:inline-block;}
+  a.breadcrumb:hover{color:var(--blue);}
+  .title{font-size:36px;font-weight:700;letter-spacing:-0.5px;}
+  .subtitle{font-size:16px;color:var(--sub);margin-top:8px;}
+  .search{
+    margin-top:28px;height:56px;border-radius:var(--radius);
+    background:var(--search-bg);display:flex;align-items:center;gap:12px;
+    padding:0 18px;border:1px solid transparent;transition:border-color .15s ease;
+  }
+  .search:focus-within{border-color:var(--blue);}
+  .search input{flex:1;border:none;background:transparent;outline:none;font-size:16px;color:var(--ink);font-family:inherit;}
+  .search input::placeholder{color:var(--muted);}
+  .sortbar{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap;}
+  .sort-label{font-size:14px;color:var(--sub);font-weight:500;}
+  .sort-sel{
+    height:40px;border-radius:12px;border:1px solid #E2E2E7;background:#fff;
+    font-size:14px;color:var(--ink);padding:0 12px;font-family:inherit;cursor:pointer;
+  }
+  .sort-sel:focus{outline:none;border-color:var(--blue);}
+  .meta{font-size:14px;color:var(--muted);font-weight:500;margin:18px 0 14px;}
+  .list{display:flex;flex-direction:column;gap:14px;}
+  .row{
+    display:flex;align-items:center;gap:16px;cursor:pointer;
+    background:#F5F5F7;border-radius:var(--radius);padding:18px 24px;
+    transition:background .15s ease;
+  }
+  .row:hover{background:#ECECEF;}
+  .co{flex:0 0 auto;display:flex;flex-direction:column;gap:4px;min-width:200px;}
+  .co .name{font-size:18px;font-weight:700;}
+  .co .code{font-size:13px;color:var(--muted);}
+  .tag{flex:0 0 auto;background:var(--blue-soft);color:var(--blue-ink);font-size:13px;font-weight:500;padding:4px 12px;border-radius:14px;}
+  .spacer{flex:1 1 auto;}
+  .mcap{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:104px;}
+  .mcap .mv{font-size:16px;font-weight:700;}
+  .mcap .ms{font-size:12px;color:var(--muted);}
+  .price{display:flex;align-items:baseline;gap:12px;flex:0 0 auto;}
+  .price .val{font-size:18px;font-weight:700;}
+  .price .chg{font-size:14px;font-weight:600;}
+  .chg.up{color:var(--up);}
+  .chg.down{color:var(--down);}
+  .del{
+    flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:1px solid #E2E2E7;
+    background:#fff;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;
+    font-family:inherit;transition:all .15s ease;
+  }
+  .del:hover{border-color:var(--up);color:var(--up);}
+  .del:disabled{opacity:.5;cursor:default;}
+  .state{text-align:center;padding:48px 16px;}
+  .state .t{font-size:17px;font-weight:600;margin-bottom:10px;}
+  .state .d{font-size:14px;color:var(--muted);line-height:1.7;}
+  .state .btn{
+    display:inline-block;margin-top:18px;height:42px;line-height:42px;padding:0 22px;border-radius:21px;
+    background:var(--blue);color:#fff;font-size:15px;font-weight:600;text-decoration:none;
+  }
+  .state .btn:hover{background:#0062C4;}
+  .state .retry{
+    display:inline-block;margin:18px 0 0 10px;height:42px;line-height:40px;padding:0 22px;border-radius:21px;
+    border:1px solid #E2E2E7;background:#fff;color:var(--ink);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .state .retry:hover{border-color:var(--blue);color:var(--blue);}
+  .banner{
+    margin-top:16px;padding:12px 16px;border-radius:12px;font-size:14px;
+    background:#FFF7E6;color:#8A5A00;border:1px solid #FFE2A8;
+  }
+  @media (max-width:480px){
+    body{padding:24px 12px;}
+    .page{border-radius:20px;padding:32px 20px;}
+    .title{font-size:28px;}
+    .row{flex-wrap:wrap;gap:10px;padding:14px 16px;}
+    .co{min-width:0;flex:1 1 100%;}
+    .tag{order:3;}
+    .price{order:2;margin-left:auto;}
+    .spacer{display:none;}
+    .mcap{order:5;align-items:flex-start;min-width:0;}
+    .del{order:6;}
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <a href="index.html" class="breadcrumb">← 返回首页</a>
+    <div class="breadcrumb">TradeAI / 我的自选</div>
+    <div class="title">我的自选</div>
+    <div class="subtitle">关注的标的集中在这里，行情随全市场缓存一并刷新</div>
+
+    <div class="search">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="11" cy="11" r="7" stroke="#86868B" stroke-width="2"/>
+        <path d="M20 20L16.5 16.5" stroke="#86868B" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input id="q" type="text" placeholder="在自选中筛选名称、代码或行业…" autocomplete="off" />
+    </div>
+
+    <div class="sortbar">
+      <span class="sort-label">排序</span>
+      <select id="sortSel" class="sort-sel">
+        <option value="add">添加顺序</option>
+        <option value="chg_desc">涨跌幅（高→低）</option>
+        <option value="chg_asc">涨跌幅（低→高）</option>
+        <option value="mcap_desc">总市值（高→低）</option>
+        <option value="mcap_asc">总市值（低→高）</option>
+      </select>
+    </div>
+
+    <div class="meta" id="meta">加载中…</div>
+    <div id="banner"></div>
+    <div class="list" id="list"></div>
+  </div>
+
+<script src="js/list_state.js"></script>
+<script>
+(function(){
+  'use strict';
+  // 存储走 8002（经 8000 同源代理到 auth.db）；行情由 8000 的 /api/watchlist_quotes 拼装。
+  var API_LIST   = '/api/watchlist';          // 代码列表（含名称快照）
+  var API_QUOTES = '/api/watchlist_quotes';   // 行情（结构与 /api/stocks 对齐）
+  var STATE_KEY  = 'watchlist';
+
+  var elList = document.getElementById('list');
+  var elMeta = document.getElementById('meta');
+  var elBan  = document.getElementById('banner');
+  var elQ    = document.getElementById('q');
+  var elSort = document.getElementById('sortSel');
+
+  var rows  = [];      // 行情行，顺序即服务端返回的「添加顺序」
+  var q     = '';
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function toLogin(){
+    location.href = '/login.html?next=' + encodeURIComponent(location.pathname);
+  }
+
+  function showState(html){
+    elList.innerHTML = '<div class="state">' + html + '</div>';
+  }
+
+  // 自选为空：给出去添加的引导
+  function renderEmpty(){
+    elMeta.textContent = '暂无自选';
+    showState(
+      '<div class="t">还没有自选标的</div>' +
+      '<div class="d">在个股详情页点「加自选」，之后就能在这里统一查看行情。</div>' +
+      '<a class="btn" href="stock.html">去添加</a>'
+    );
+  }
+
+  // 行情源异常：**不是**「未找到」，明确区分并给出重试
+  function renderUnavailable(n){
+    elMeta.textContent = '';
+    showState(
+      '<div class="t">行情数据暂不可用</div>' +
+      '<div class="d">自选（' + n + ' 只）已保存，但当前取不到行情。<br>这通常是行情源临时限流，稍后刷新即可恢复。</div>' +
+      '<button class="retry" id="retryBtn">重新加载</button>'
+    );
+    var b = document.getElementById('retryBtn');
+    if(b) b.addEventListener('click', function(){ load(); });
+  }
+
+  function chgClass(d){ return d === 'up' ? 'up' : (d === 'down' ? 'down' : ''); }
+
+  // 降级模式下市值可能缺失（单股接口不返回 f20/f21）——该行就不渲染市值块，
+  // 避免一排 "--" 被误读成「市值为 0」。
+  function buildRow(d){
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.dataset.code = d.code;
+    row.innerHTML =
+      '<div class="co"><div class="name">' + esc(d.name) + '</div><div class="code">' + esc(d.code) + '</div></div>' +
+      (d.ind ? '<div class="tag">' + esc(d.ind) + '</div>' : '') +
+      '<div class="spacer"></div>' +
+      (d.mcap_disp ? '<div class="mcap"><span class="mv">' + esc(d.mcap_disp) + '</span>' +
+        '<span class="ms">流通 ' + esc(d.fcap_disp || '--') + '</span></div>' : '') +
+      '<div class="price"><span class="val">' + esc(d.price || '--') + '</span>' +
+        '<span class="chg ' + chgClass(d.dir) + '">' + esc(d.chg || '--') + '</span></div>' +
+      '<button class="del" title="移出自选" aria-label="移出自选">×</button>';
+
+    row.addEventListener('click', function(){
+      // 保存滚动位置，返回时可复位（复用列表页共用的会话内状态机制）
+      if(window.ListState) window.ListState.save(STATE_KEY, {scrollY: window.scrollY});
+      location.href = 'stock_detail.html?code=' + encodeURIComponent(d.code);
+    });
+
+    var del = row.querySelector('.del');
+    del.addEventListener('click', function(e){
+      e.stopPropagation();     // 行本身绑定了跳转详情，必须阻断冒泡
+      removeOne(d.code, row, del);
+    });
+    return row;
+  }
+
+  function removeOne(code, row, btn){
+    btn.disabled = true;
+    fetch(API_LIST + '/remove', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: code})
+    })
+      .then(function(r){
+        if(r.status === 401){ toLogin(); throw new Error('unauth'); }
+        return r.json().then(function(d){ return {ok: r.ok, d: d}; });
+      })
+      .then(function(res){
+        if(!res.ok){ btn.disabled = false; flash((res.d && res.d.detail) || '移除失败，请稍后重试'); return; }
+        // 幂等：removed=false（本就不存在）同样视为成功，直接移除该行
+        row.parentNode && row.parentNode.removeChild(row);
+        rows = rows.filter(function(r){ return r.code !== code; });
+        updateMeta();
+        if(!rows.length){ renderEmpty(); }
+      })
+      .catch(function(err){
+        btn.disabled = false;
+        if(err && err.message === 'unauth') return;
+        flash('网络异常，请稍后重试');
+      });
+  }
+
+  function flash(text){
+    elBan.innerHTML = '<div class="banner">' + esc(text) + '</div>';
+    clearTimeout(flash._t);
+    flash._t = setTimeout(function(){ elBan.innerHTML = ''; }, 4000);
+  }
+
+  function updateMeta(){
+    var shown = visibleRows().length;
+    if(q){
+      elMeta.textContent = '共 ' + rows.length + ' 只 · 匹配 ' + shown + ' 只';
+    } else {
+      elMeta.textContent = '共 ' + rows.length + ' 只';
+    }
+  }
+
+  // 排序在前端做：服务端 records 的 chg 是展示字符串（"+1.23%"），按它排序会
+  // 退化为字符串比较（handle_api_stocks 现状缺陷）；此处统一用数值字段。
+  var SORT_KEY = { chg: 'chg_num', mcap: 'mcap', fcap: 'fcap' };
+
+  function sortedRows(){
+    var mode = elSort.value;
+    var arr = rows.slice();
+    if(mode === 'add') return arr;                       // rows 已是服务端「添加顺序」
+    var asc = mode.slice(-4) === '_asc';
+    var key = SORT_KEY[mode.slice(0, mode.lastIndexOf('_'))] || 'mcap';
+    arr.sort(function(a, b){
+      var x = a[key], y = b[key];
+      if(x == null) x = asc ? Infinity : -Infinity;
+      if(y == null) y = asc ? Infinity : -Infinity;
+      return asc ? x - y : y - x;
+    });
+    return arr;
+  }
+
+  function visibleRows(){
+    var kw = q.trim().toLowerCase();
+    var arr = sortedRows();
+    if(!kw) return arr;
+    return arr.filter(function(d){
+      return String(d.name || '').toLowerCase().indexOf(kw) >= 0
+          || String(d.code || '').toLowerCase().indexOf(kw) >= 0
+          || String(d.ind  || '').toLowerCase().indexOf(kw) >= 0;
+    });
+  }
+
+  function renderList(){
+    if(!rows.length){ renderEmpty(); return; }
+    var arr = visibleRows();
+    updateMeta();
+    if(!arr.length){
+      elList.innerHTML = '<div class="state"><div class="t">没有匹配的标的</div>' +
+        '<div class="d">换个关键词试试，或清空搜索框。</div></div>';
+      return;
+    }
+    elList.innerHTML = '';
+    var frag = document.createDocumentFragment();
+    arr.forEach(function(d){ frag.appendChild(buildRow(d)); });
+    elList.appendChild(frag);
+  }
+
+  function load(){
+    elMeta.textContent = '加载中…';
+    fetch(API_QUOTES)
+      .then(function(r){
+        if(r.status === 401){ toLogin(); return null; }
+        return r.json();
+      })
+      .then(function(d){
+        if(!d) return;
+        if(d.error && d.data_status !== 'unavailable'){ flash(d.error); return; }
+        rows = d.stocks || [];
+        var n = d.total || rows.length;
+        var st = d.data_status;
+        if(st === 'empty'){ renderEmpty(); return; }
+        if(st === 'unavailable'){ renderUnavailable(n); return; }
+        if(st === 'degraded'){
+          elBan.innerHTML = '<div class="banner">行情源响应异常，已切换为逐只取价，个别标的可能缺少行业/市值信息。</div>';
+        } else {
+          marketNote(d.market_status, d.market_updated);
+        }
+        renderList();
+      })
+      .catch(function(){ flash('加载失败，请检查网络后重试'); elMeta.textContent = ''; });
+  }
+
+  // 市场数据的来源提示：自选本身正常时，行情仍可能来自备用源/旧缓存/离线快照，
+  // 必须让用户知道，否则会把过期价格当成实时价格。
+  function marketNote(status, updated){
+    var t = String(updated || '').slice(0, 16);
+    if(status === 'backup'){
+      elBan.innerHTML = '<div class="banner">东方财富行情源不可用，当前价格来自备用行情源（腾讯），为实时数据。</div>';
+    } else if(status === 'stale'){
+      elBan.innerHTML = '<div class="banner">实时行情源不可用，当前显示的是非实时缓存'
+                      + (t ? '（数据时间 ' + esc(t) + '）' : '') + '。</div>';
+    } else if(status === 'snapshot'){
+      elBan.innerHTML = '<div class="banner">实时行情源不可用，当前显示的是离线快照'
+                      + (t ? '（数据时间 ' + esc(t) + '）' : '') + '，价格可能已过期。</div>';
+    } else {
+      elBan.innerHTML = '';
+    }
+  }
+
+  elQ.addEventListener('input', function(e){ q = e.target.value || ''; renderList(); });
+  elSort.addEventListener('change', renderList);
+
+  // 返回本页时恢复滚动位置（仅「返回」导航生效，见 list_state.js）
+  var snap = window.ListState ? window.ListState.load(STATE_KEY) : null;
+  if(snap && typeof snap.scrollY === 'number'){
+    window.ListState.restoreScroll(snap.scrollY);
+    window.ListState.cleanUrl();
+  }
+
+  load();
+})();
+</script>
+<!-- F-04 报告任务中心：自选页也常被当作"等报告时的落脚页"，故同样挂全局指示器 -->
+<script src="js/task_center.js"></script>
+</body>
+</html>

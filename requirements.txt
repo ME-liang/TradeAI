@@ -3,6 +3,8 @@ numpy>=1.24
 jinja2>=3.1
 matplotlib>=3.7
 pyyaml>=6.0
+# PyMuPDF：代码里以 `import fitz` 引入（data/annual_report.py），漏列会导致后端启动即崩
+pymupdf>=1.24
 tushare>=1.2
 akshare>=1.18,<2.0
 python-dotenv>=1.0
@@ -10,4 +12,6 @@ requests>=2.25
 fastapi>=0.110
 uvicorn>=0.27
 httpx>=0.27
+# 测试：tests/ 下已有 pytest 用例，此前漏列导致「装完依赖仍跑不了测试」（优化清单 T-22）
+pytest>=7.4
 

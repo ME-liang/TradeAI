@@ -25,6 +25,9 @@ _*
 
 # ===== 运行时数据缓存 =====
 data/cache/
+# SQLite WAL 模式运行期副产物（服务一跑就生成，非源码）
+data/*.db-shm
+data/*.db-wal
 
 # ===== WorkBuddy 项目数据（非代码） =====
 .workbuddy/

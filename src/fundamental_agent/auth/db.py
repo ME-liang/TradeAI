@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite 三表与连接封装（方案阶段 1 第 1 行）。
+"""SQLite 四表与连接封装（方案阶段 1 第 1 行 + F-03 自选股）。
 
-对应方案: `src/fundamental_agent/auth/db.py` —— users / sessions / sms_codes 三表 +
-连接封装。零新增依赖, 仅用标准库 sqlite3。
+对应方案: `src/fundamental_agent/auth/db.py` —— users / sessions / sms_codes /
+watchlist 四表 + 连接封装。零新增依赖, 仅用标准库 sqlite3。
 
 表设计（与方案阶段 1 一致）:
   users      username 唯一; password_hash 为 scrypt 哈希(自带盐); phone/phone_bound
              记录手机号绑定状态(首次登录强制绑定, 属阶段 1 后续)
   sessions   token 为主键(透明随机会话令牌); 外键 user_id 级联删除; expires_at 过期
   sms_codes  验证码流水: phone + purpose + 有效期 + used 标记, 支撑频控与校验
+  watchlist  自选股(F-03): 用户私有的关注标的集合; 外键 user_id 级联删除;
+             唯一约束 (user_id, code) 保证幂等; name 为冗余名称快照(行情缺失时兜底显示)
+
+建表与"迁移"方式:
+    get_conn() 每次连接都执行 executescript(SCHEMA_SQL), 而所有 DDL 均为
+    CREATE TABLE/INDEX IF NOT EXISTS —— 因此**新增表无需迁移脚本**,
+    老库在任一次连接后自动补齐结构, 既有数据不受影响。
 
 建表脚本用法:
     python -m fundamental_agent.auth.db          # 建表 + 预置管理员 admin(若 users 表为空)
@@ -78,6 +85,23 @@ CREATE INDEX IF NOT EXISTS idx_sms_phone_time ON sms_codes(phone, created_at);
 -- 防并发注册/绕过服务层写入造成重复。
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_phone
     ON users(phone) WHERE phone IS NOT NULL AND phone != '';
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code       TEXT    NOT NULL,
+    name       TEXT    NOT NULL DEFAULT '',
+    note       TEXT    NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT    NOT NULL,
+    updated_at TEXT
+);
+-- 幂等的根本保证: 同一用户同一代码只允许一行。并发双击/重复提交由数据库兜底,
+-- 服务层用 INSERT OR IGNORE 依赖此约束把重复添加转成「无声成功」。
+-- 注: ON DELETE CASCADE 生效前提是 PRAGMA foreign_keys = ON, 见 get_conn()。
+CREATE UNIQUE INDEX IF NOT EXISTS ux_watchlist_user_code ON watchlist(user_id, code);
+-- 列表查询索引: 按用户取, 按手工排序 + 添加时间
+CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id, sort_order, created_at);
 """
 
 
@@ -144,7 +168,7 @@ def init_db(seed_admin: bool = True) -> bool:
 if __name__ == "__main__":
     seeded = init_db(seed_admin=True)
     print("数据库: %s" % DB_PATH)
-    print("三表就绪: users / sessions / sms_codes")
+    print("四表就绪: users / sessions / sms_codes / watchlist")
     if seeded:
         print("已预置管理员: %s" % ADMIN_USERNAME)
     else:
@@ -153,4 +177,8 @@ if __name__ == "__main__":
     for row in conn.execute("SELECT id, username, phone_bound, status, created_at FROM users"):
         print("  user: id=%s username=%s phone_bound=%s status=%s created_at=%s"
               % (row["id"], row["username"], row["phone_bound"], row["status"], row["created_at"]))
+        wl = conn.execute("SELECT COUNT(*) AS c FROM watchlist WHERE user_id = ?",
+                          (row["id"],)).fetchone()["c"]
+        print("        自选 %d 只" % wl)
+    conn.close()
     conn.close()

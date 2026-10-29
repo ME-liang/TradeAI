@@ -36,6 +36,12 @@
     transition:background .15s;display:inline-flex;align-items:center;gap:8px;
   }
   .aibtn:hover{background:#005BB8;}
+  /* 「查看历史报告」：板块报告按钮旁的次要入口（F-06），href 由 JS 按当前板块代码补齐 */
+  .histlink{
+    display:inline-block;margin:20px 0 0 14px;font-size:14px;font-weight:600;
+    color:var(--blue);text-decoration:none;vertical-align:middle;
+  }
+  .histlink:hover{text-decoration:underline;}
   .ov-report{margin-top:20px}
   .ov-progress{display:flex;align-items:center;gap:14px}
   .ov-progress-bar{flex:1;height:8px;background:var(--search-bg);border-radius:6px;overflow:hidden}
@@ -88,6 +94,13 @@
   .chg.down{color:var(--down);}
   .chg.flat{color:var(--muted);}
   .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:15px;}
+  /* 数据源不可用态：比普通空态更显眼，并给一个重试入口 */
+  .empty .sub{font-size:13px;line-height:1.7;margin-top:8px;color:var(--muted);}
+  .btn-retry{
+    margin-top:16px;height:36px;padding:0 18px;border:1px solid var(--blue);background:#fff;color:var(--blue);
+    font-size:14px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;
+  }
+  .btn-retry:hover{background:var(--blue);color:#fff;}
   .pager{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:28px;flex-wrap:wrap;}
   .pager button{
     min-width:38px;height:36px;padding:0 12px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
@@ -137,6 +150,7 @@
     <div class="subtitle" id="subtitle">该板块下全部个股一览</div>
 
     <button class="aibtn" id="aiBoardReport" type="button">AI生成板块报告</button>
+    <a class="histlink" id="boardHistory" href="reports.html?type=board">查看历史报告 →</a>
     <div id="board-report" class="ov-report" style="display:none">
       <div id="board-progress" class="ov-progress">
         <div class="ov-progress-bar"><span id="board-progress-fill" class="ov-progress-fill"></span></div>
@@ -182,6 +196,14 @@
   const params0 = new URLSearchParams(location.search);
   const BK = (params0.get('code') || params0.get('bk') || '').trim().toUpperCase();
   const nameFromUrl = (params0.get('name') || '').trim();
+
+  // F-06：板块报告的「查看历史报告」入口补齐当前板块代码（BK 已归一化为大写，
+  // 且板块报告只认 BKxxxx，非法值就不带 code，退化为该类型的全部报告）。
+  (function(){
+    const a = document.getElementById('boardHistory');
+    if(!a || !/^BK\d+$/.test(BK)) return;
+    a.href = 'reports.html?type=board&code=' + encodeURIComponent(BK);
+  })();
 
   const list = document.getElementById('list');
   const meta = document.getElementById('meta');
@@ -269,9 +291,29 @@
     pager.innerHTML = '';
   }
 
+  // 关键词要拼进 innerHTML，必须转义
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
   // ===== API 模式渲染(后端已排序+分页, 前端直接出图) =====
+  // data_status 语义与板块列表页一致：unavailable = 数据源故障，
+  // **不是**「该板块暂无成分股」——两者必须说清楚，否则用户会以为板块是空的。
   function renderApi(data){
     if(data.bk_name) setTitle(data.bk_name);
+    if(data.data_status === 'unavailable'){
+      list.innerHTML = '<div class="empty">'
+        + '<div>板块成分股暂不可用</div>'
+        + '<div class="sub">行情数据源当前无法连接，本地也还没有该板块的缓存。<br>'
+        + '这不是「该板块没有成分股」，稍后重试即可。</div>'
+        + '<button class="btn-retry" onclick="load()">重新加载</button>'
+        + '</div>';
+      meta.textContent = '数据源暂不可用';
+      pager.innerHTML = '';
+      return;
+    }
     const stocks = data.stocks || [];
     const total = data.total || 0;
     const cur = data.page || 1;
@@ -281,7 +323,7 @@
       // 空状态: 区分「板块确无成分股」与「搜索无结果」
       const kw = state.q.trim();
       list.innerHTML = '<div class="empty">'
-        + (kw ? ('未找到匹配「'+ kw +'」的个股') : '该板块暂无成分股') + '</div>';
+        + (kw ? ('未找到匹配「'+ esc(kw) +'」的个股') : '该板块暂无成分股') + '</div>';
       meta.textContent = '共 0 只';
       pager.innerHTML = '';
       return;
@@ -508,5 +550,7 @@
     });
   });
 </script>
+<!-- F-04 报告任务中心：板块报告本页发起，全局指示器保证切页后仍能看到进度 -->
+<script src="js/task_center.js"></script>
 </body>
 </html>

@@ -4,7 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ bk_name }}板块深度分析报告</title>
+{# 图表库：优先内联本地副本（报告可离线打开/打印；见 report_types/chart_assets.py），
+   读不到时回退 CDN —— 绝不因静态资源缺失让报告生成失败。 #}
+{% if chart_lib_inline %}
+<script>{{ chart_lib_inline | safe }}</script>
+{% else %}
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+{% endif %}
 <style>
   :root{
     --bg:#f7f8fa; --card:#ffffff; --ink:#1f2933; --sub:#5b6b7b; --line:#e3e8ee;

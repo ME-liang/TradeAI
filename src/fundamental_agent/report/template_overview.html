@@ -4,7 +4,13 @@
 <meta charset="UTF-8" data-page-node-id="ihabSK2wmgfMCcds5RlA8L">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="S5lwcpF8OyrVO8aGpIeaqw">
 <title>{{ name }}（{{ code }}）公司概况分析</title>
+{# 图表库：优先内联本地副本（报告可离线打开/打印；见 report_types/chart_assets.py），
+   读不到时回退 CDN —— 绝不因静态资源缺失让报告生成失败。 #}
+{% if chart_lib_inline %}
+<script>{{ chart_lib_inline | safe }}</script>
+{% else %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+{% endif %}
 <style>
   :root{
     --ink:#1b2330; --ink2:#4a5464; --ink3:#7b8494;

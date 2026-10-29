@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TradeAI · 报告库</title>
+<style>
+  :root{
+    --bg:#F5F5F7;
+    --card:#FFFFFF;
+    --ink:#1D1D1F;
+    --sub:#6E6E73;
+    --muted:#86868B;
+    --blue:#0071E3;
+    --blue-soft:#EAF2FC;
+    --line:#E2E2E7;
+    --radius:16px;
+    /* 四种报告类型的徽标色（未知类型回落中性灰） */
+    --t-fundamental:#0071E3;
+    --t-fundamental-bg:#EAF2FC;
+    --t-overview:#0E8A6E;
+    --t-overview-bg:#E6F4F0;
+    --t-industry:#7A5AF8;
+    --t-industry-bg:#F1ECFE;
+    --t-board:#B26A00;
+    --t-board-bg:#FFF4E0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);
+    display:flex;justify-content:center;padding:48px 16px;
+  }
+  .page{width:100%;max-width:1200px;background:var(--card);border-radius:24px;padding:56px 48px;}
+  .breadcrumb{font-size:14px;color:var(--muted);font-weight:500;margin-bottom:8px;}
+  a.breadcrumb{text-decoration:none;display:inline-block;}
+  a.breadcrumb:hover{color:var(--blue);}
+  .title{font-size:36px;font-weight:700;letter-spacing:-0.5px;}
+  .subtitle{font-size:16px;color:var(--sub);margin-top:8px;}
+
+  .search{
+    margin-top:28px;height:56px;border-radius:var(--radius);
+    background:#F5F7FA;display:flex;align-items:center;gap:12px;
+    padding:0 18px;border:1px solid transparent;transition:border-color .15s ease;
+  }
+  .search:focus-within{border-color:var(--blue);}
+  .search input{flex:1;border:none;background:transparent;outline:none;font-size:16px;color:var(--ink);font-family:inherit;}
+  .search input::placeholder{color:var(--muted);}
+
+  /* ===== 类型条（chips）：计数取服务端 types 全量镜像，任何筛选下数字不变 ===== */
+  .chips{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap;}
+  .chip{
+    height:40px;padding:0 18px;border-radius:20px;border:1px solid var(--line);background:#fff;
+    font-size:14px;font-weight:600;color:var(--ink);font-family:inherit;cursor:pointer;
+    transition:all .15s ease;
+  }
+  .chip:hover{border-color:var(--blue);color:var(--blue);}
+  .chip[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .chip .n{font-weight:500;opacity:.72;margin-left:6px;}
+  .chip[aria-pressed="true"] .n{opacity:.85;}
+
+  .filterbar{
+    display:flex;align-items:center;gap:10px;margin-top:14px;font-size:14px;color:var(--sub);
+  }
+  .filterbar[hidden]{display:none;}
+  .filterbar .pill{
+    display:inline-flex;align-items:center;gap:8px;background:var(--blue-soft);color:var(--blue);
+    border-radius:14px;padding:5px 12px;font-weight:600;font-size:13px;
+  }
+  .filterbar .pill button{
+    border:none;background:transparent;color:var(--blue);font-size:15px;line-height:1;cursor:pointer;font-family:inherit;
+  }
+
+  .meta{font-size:14px;color:var(--muted);font-weight:500;margin:18px 0 14px;}
+
+  /* ===== 类型分区 ===== */
+  .section{margin-top:26px;}
+  .section-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
+  .section-head h2{font-size:20px;font-weight:700;letter-spacing:-0.2px;}
+  .section-head .count{font-size:14px;color:var(--muted);font-weight:500;}
+  .list{display:flex;flex-direction:column;gap:14px;}
+
+  .row{
+    display:flex;align-items:center;gap:16px;
+    background:#F5F5F7;border-radius:var(--radius);padding:18px 24px;
+  }
+  .badge{
+    flex:0 0 auto;font-size:12px;font-weight:700;padding:5px 12px;border-radius:12px;
+    background:#EFEFF2;color:var(--sub);white-space:nowrap;
+  }
+  .badge.t-fundamental{background:var(--t-fundamental-bg);color:var(--t-fundamental);}
+  .badge.t-overview{background:var(--t-overview-bg);color:var(--t-overview);}
+  .badge.t-industry{background:var(--t-industry-bg);color:var(--t-industry);}
+  .badge.t-board{background:var(--t-board-bg);color:var(--t-board);}
+
+  .subj{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:5px;}
+  .subj .n{font-size:17px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .subj .n .c{font-size:13px;color:var(--muted);font-weight:500;margin-left:8px;}
+  .subj .n .bk{font-size:12px;color:var(--sub);font-weight:500;margin-left:8px;}
+  .subj .facts{font-size:13px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;}
+  .subj .facts .warn{color:#B26A00;font-weight:600;}
+
+  .acts{flex:0 0 auto;display:flex;align-items:center;gap:10px;}
+  .act{
+    display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:20px;
+    font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap;
+    border:1px solid transparent;transition:all .15s ease;
+  }
+  .act.primary{background:var(--blue);color:#fff;}
+  .act.primary:hover{background:#0062C4;}
+  .act.ghost{border-color:var(--line);background:#fff;color:var(--ink);}
+  .act.ghost:hover{border-color:var(--blue);color:var(--blue);}
+  /* 删除是**破坏性**操作：颜色区分开，让它一眼可辨、且不会被误当成主操作 */
+  .act.danger{border-color:#F0D3D0;background:#fff;color:#C7362F;cursor:pointer;font-family:inherit;}
+  .act.danger:hover{border-color:#C7362F;background:#C7362F;color:#fff;}
+  /* 导出按钮（F-07）：与 .act 同形，但它是 <button> 而非 <a> —— 走 fetch + blob 下载，
+     不能用 <a href> 直链（直链读不到 X-Export-Warnings 告警，也没法在前端兜底文件名）。 */
+  button.act{cursor:pointer;font-family:inherit;}
+  button.act.ghost{background:#fff;}
+  .act[disabled]{opacity:.5;cursor:default;}
+  .act[disabled]:hover{border-color:var(--line);color:var(--ink);}
+
+  /* ===== 批量删除条（**只在有筛选条件时出现**）=====
+     无筛选 = 「删除全部」，那是个一眼看不出后果的操作，不该出现在列表页上。 */
+  .bulkbar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin-top:14px;padding:12px 16px;border-radius:12px;
+    background:#FFF7F6;border:1px solid #F6DAD7;font-size:14px;color:#8A3B34;
+  }
+  .bulkbar[hidden]{display:none;}
+  .bulkbar .sp{flex:1 1 auto;}
+  .bulkbar button{
+    height:36px;padding:0 16px;border-radius:18px;border:1px solid #E8B7B2;background:#fff;
+    color:#C7362F;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .bulkbar button:hover{background:#C7362F;border-color:#C7362F;color:#fff;}
+
+  /* ===== 删除确认弹层（单条 / 批量共用）=====
+     用自定义弹层而不是原生 confirm()：原生对话框在移动端样式不可控、无法列出待删清单、
+     也截不进图（headless 下还会直接阻塞脚本）。 */
+  .modal{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .modal[hidden]{display:none;}
+  .modal .mask{position:absolute;inset:0;background:rgba(0,0,0,.32);}
+  .modal .card{
+    position:relative;width:100%;max-width:460px;background:#fff;border-radius:20px;
+    padding:26px 26px 20px;box-shadow:0 20px 60px rgba(0,0,0,.22);
+  }
+  .modal h3{font-size:19px;font-weight:700;letter-spacing:-0.2px;}
+  .modal .desc{font-size:14px;color:var(--sub);line-height:1.75;margin-top:10px;}
+  .modal ul{
+    margin:12px 0 0;padding:0;list-style:none;max-height:180px;overflow:auto;
+    border:1px solid var(--line);border-radius:12px;background:#FAFAFC;
+  }
+  .modal ul[hidden]{display:none;}
+  .modal ul li{font-size:13px;padding:9px 14px;border-bottom:1px solid var(--line);color:var(--ink);}
+  .modal ul li:last-child{border-bottom:none;}
+  .modal .warnbox{
+    margin-top:14px;padding:10px 14px;border-radius:10px;background:#FFF7F6;
+    border:1px solid #F6DAD7;color:#8A3B34;font-size:13px;font-weight:600;
+  }
+  .modal .btns{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+  .modal .btns button{
+    height:42px;padding:0 22px;border-radius:21px;font-size:15px;font-weight:600;
+    cursor:pointer;font-family:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);
+  }
+  .modal .btns button:hover{border-color:var(--blue);color:var(--blue);}
+  .modal .btns .go{background:#C7362F;border-color:#C7362F;color:#fff;}
+  .modal .btns .go:hover{background:#A82B25;border-color:#A82B25;color:#fff;}
+  .modal .btns .go[disabled]{opacity:.6;cursor:default;}
+
+  /* ===== 导出格式选项（F-07）=====
+     一颗按钮 = 一种使用场景。「能发给别人」是这件事的目标，而打开报告需要账号 ——
+     把场景直接写在按钮上，用户不必猜「长图和 PDF 有什么区别」。 */
+  .expopts{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+  .expopts button{
+    display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;
+    padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:#fff;
+    cursor:pointer;font-family:inherit;text-align:left;transition:all .15s ease;
+  }
+  .expopts button:hover{border-color:var(--blue);background:#F7FAFF;}
+  .expopts button b{font-size:15px;font-weight:700;color:var(--ink);}
+  .expopts button span{font-size:13px;color:var(--muted);line-height:1.6;}
+  .expopts button[disabled]{opacity:.5;cursor:default;}
+  .expopts button[disabled]:hover{border-color:var(--line);background:#fff;}
+
+  /* ===== 三态分离：空 / 不可用 / 单条损坏 ===== */
+  .state{text-align:center;padding:48px 16px;}
+  .state .t{font-size:17px;font-weight:600;margin-bottom:10px;}
+  .state .d{font-size:14px;color:var(--muted);line-height:1.8;}
+  .state .btns{margin-top:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .state .btn{
+    display:inline-block;height:42px;line-height:42px;padding:0 22px;border-radius:21px;
+    background:var(--blue);color:#fff;font-size:15px;font-weight:600;text-decoration:none;
+  }
+  .state .btn:hover{background:#0062C4;}
+  .state .retry{
+    display:inline-block;height:42px;line-height:40px;padding:0 22px;border-radius:21px;
+    border:1px solid var(--line);background:#fff;color:var(--ink);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .state .retry:hover{border-color:var(--blue);color:var(--blue);}
+  .banner{
+    margin-top:16px;padding:12px 16px;border-radius:12px;font-size:14px;
+    background:#FFF7E6;color:#8A5A00;border:1px solid #FFE2A8;
+  }
+  .more{display:flex;justify-content:center;margin-top:24px;}
+  .more button{
+    height:42px;padding:0 24px;border-radius:21px;border:1px solid var(--line);background:#fff;
+    font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit;
+  }
+  .more button:hover{border-color:var(--blue);color:var(--blue);}
+
+  /* ===== F-04 报告任务中心（跑中任务的进度就显示在这里） =====
+     样式主体在 js/task_center.js 内联注入；此处只给宿主容器定外框。
+     为什么任务中心长在报告库页上：F-04（跑中任务）与 F-06（已生成产物）是同一件事的
+     前后两段，放在同一页才能让「生成完成后自动进入报告库」被肉眼看见。 */
+  .tcenter{margin-top:28px;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;background:#FBFBFD;}
+  .tcenter-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .tcenter-head h2{font-size:17px;font-weight:700;letter-spacing:-0.2px;}
+  .tcenter-head span{font-size:13px;color:var(--muted);}
+  .tcenter .tc-empty .big{font-size:15px;}
+
+  @media (max-width:600px){
+    body{padding:24px 12px;}
+    .page{border-radius:20px;padding:32px 20px;}
+    .title{font-size:28px;}
+    .row{flex-wrap:wrap;gap:12px;padding:16px;}
+    .subj{flex:1 1 100%;order:2;}
+    .badge{order:1;}
+    .acts{order:3;width:100%;flex-wrap:wrap;}
+    .acts .act{flex:1 1 auto;justify-content:center;}
+    /* 四个按钮在窄屏必然挤成一条 → 允许换行，删除独占行尾并右对齐，与「打开报告」拉开距离 */
+    .acts .act.danger{flex:0 0 auto;margin-left:auto;}
+    .expopts button{padding:11px 14px;}
+    .tcenter{padding:14px;}
+    .bulkbar{padding:12px;}
+    .bulkbar button{width:100%;}
+    .modal{padding:16px;}
+    .modal .btns{flex-direction:column-reverse;}
+    .modal .btns button{width:100%;}
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <a href="index.html" class="breadcrumb">← 返回首页</a>
+    <div class="breadcrumb">TradeAI / 报告库</div>
+    <div class="title">报告库</div>
+    <div class="subtitle">已生成的报告都保存在这里，按类型分组；每份都有独立链接，可刷新、可收藏</div>
+
+    <!-- ===== F-04 报告任务中心 =====
+         跑中任务的进度显示在这里；任务完成时 js/task_center.js 会派发
+         `tradeai:task-done`，本页监听后自动重载下方列表 —— 于是「生成完成后自动
+         进入报告库」不需要用户手动刷新页面。
+         注意本区块**只列跑中与失败的任务**：已成功进库的报告由下方报告库列表负责，
+         同一份报告在这里再列一遍会制造两份互相竞争的事实。 -->
+    <section class="tcenter" aria-labelledby="taskCenterTitle">
+      <div class="tcenter-head">
+        <h2 id="taskCenterTitle">报告任务中心</h2>
+        <span id="tcHint">正在加载…</span>
+      </div>
+      <div id="taskCenter"></div>
+    </section>
+
+    <div class="search">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" stroke="#86868B" stroke-width="2"/>
+        <path d="M20 20L16.5 16.5" stroke="#86868B" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input id="q" type="text" placeholder="按名称或代码筛选…" autocomplete="off"
+             aria-label="按名称或代码筛选报告" />
+    </div>
+
+    <div class="chips" id="chips" role="group" aria-label="按报告类型筛选"></div>
+    <div class="filterbar" id="filterbar" hidden></div>
+
+    <div class="meta" id="meta">加载中…</div>
+    <!-- 批量删除入口：**只在有筛选条件时**由脚本显示（无筛选 = 删除全部，太危险） -->
+    <div class="bulkbar" id="bulkbar" hidden></div>
+    <div id="banner"></div>
+    <div id="list"></div>
+    <div class="more" id="more" hidden></div>
+  </div>
+
+  <!-- 删除确认弹层：单条与批量共用，内容由脚本填充。
+       ⚠️ 这是本页唯一会**物理删除磁盘文件**的入口，故：弹层必须列出待删清单、
+       必须显示不可恢复的警告、默认按钮是「取消」。 -->
+  <div class="modal" id="delModal" hidden role="dialog" aria-modal="true" aria-labelledby="delTitle">
+    <div class="mask" data-del-cancel></div>
+    <div class="card">
+      <h3 id="delTitle"></h3>
+      <div class="desc" id="delDesc"></div>
+      <ul id="delList" hidden></ul>
+      <div class="warnbox">此操作会从磁盘永久删除报告文件（HTML 与元信息），无法恢复。</div>
+      <div class="btns">
+        <button type="button" id="delCancel" data-del-cancel>取消</button>
+        <button type="button" class="go" id="delGo">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出弹层（F-07）：PDF / 长图 / Word 三选一。
+       目标场景是「把报告发给别人」—— 打开报告需要账号（/api/report/view 要会话），
+       而发给同事/客户时对方没有账号，故必须给一个对方也打得开的载体。 -->
+  <div class="modal" id="expModal" hidden role="dialog" aria-modal="true" aria-labelledby="expTitle">
+    <div class="mask" data-exp-cancel></div>
+    <div class="card">
+      <h3 id="expTitle">导出这份报告</h3>
+      <div class="desc" id="expDesc"></div>
+      <div class="expopts" id="expOpts"></div>
+      <div class="warnbox" id="expNote"></div>
+      <div class="btns">
+        <button type="button" id="expCancel" data-exp-cancel>取消</button>
+      </div>
+    </div>
+  </div>
+
+<script src="js/task_center.js"></script>
+<script>
+(function(){
+  'use strict';
+  var API_LIST = '/api/report/list';
+  var API_REMOVE = '/api/report/remove';   // 删除报告（与任务中心的 /api/tasks/remove 是两件事）
+  var API_EXPORT = '/api/report/export/';  // 导出报告（F-07）：GET …/{report_id}?fmt=pdf|png|docx
+  var PAGE_SIZE = 50;
+
+  var elChips = document.getElementById('chips');
+  var elBar   = document.getElementById('filterbar');
+  var elMeta  = document.getElementById('meta');
+  var elBan   = document.getElementById('banner');
+  var elList  = document.getElementById('list');
+  var elMore  = document.getElementById('more');
+  var elQ     = document.getElementById('q');
+  var elBulk  = document.getElementById('bulkbar');
+  var elModal = document.getElementById('delModal');
+  var elDelGo = document.getElementById('delGo');
+  var elExpModal = document.getElementById('expModal');
+  var elExpOpts  = document.getElementById('expOpts');
+
+  // 导出能力（本机有没有可用的浏览器）**由服务端下发**（/api/report/list 的 export 字段）。
+  // 前端不自己探测、也不硬编码格式列表 —— 与列表项的 deletable 同一取向：
+  // 能力判断只做一次，界面如实呈现。否则用户要点一次才知道「点了没反应」。
+  var exportCap = null;
+
+  // ===== 直达参数：**必须直接读 URLSearchParams** =====
+  // 本项目 N-06 的教训：js/list_state.js 的 ListState.load() 首行即 isReturnNav() 判定，
+  // 非「返回导航」一律返回 null —— 照抄它会让 ?type=/?code= 被静默忽略。
+  var SP = new URLSearchParams(location.search);
+  var state = {
+    type: (SP.get('type') || '').trim(),   // 服务端过滤（深链 / 减流）
+    code: (SP.get('code') || '').trim(),   // 服务端过滤（来自详情页「查看历史报告」）
+    q:    '',                              // 前端即时过滤（名称 / 代码 / 类型名）
+    page: 1,
+    items: [],
+    types: [],
+    total: 0
+  };
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function toLogin(){
+    location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+  }
+
+  function showState(html){ elList.innerHTML = '<div class="state">' + html + '</div>'; }
+
+  function flash(text){
+    elBan.innerHTML = '<div class="banner">' + esc(text) + '</div>';
+    clearTimeout(flash._t);
+    flash._t = setTimeout(function(){ elBan.innerHTML = ''; }, 5000);
+  }
+
+  function typeLabel(key){
+    for(var i=0;i<state.types.length;i++){
+      if(state.types[i].key === key) return state.types[i].label;
+    }
+    return key;   // 未知类型退回 key（与后端同口径，不吞掉任何产出）
+  }
+
+  // ===== 类型条：计数来自服务端 types（**过滤前的全量镜像**）=====
+  function renderChips(){
+    var total = 0;
+    state.types.forEach(function(t){ total += t.count; });
+    var html = '<button class="chip" type="button" data-type="" aria-pressed="' +
+               (state.type ? 'false' : 'true') + '">全部<span class="n">' + total + '</span></button>';
+    state.types.forEach(function(t){
+      html += '<button class="chip" type="button" data-type="' + esc(t.key) + '" aria-pressed="' +
+              (state.type === t.key ? 'true' : 'false') + '">' + esc(t.label) +
+              '<span class="n">' + t.count + '</span></button>';
+    });
+    elChips.innerHTML = html;
+    Array.prototype.forEach.call(elChips.querySelectorAll('.chip'), function(b){
+      b.addEventListener('click', function(){
+        var next = b.getAttribute('data-type') || '';
+        if(next === state.type) next = '';        // 再点一次取消聚焦
+        state.type = next;
+        state.page = 1;
+        syncUrl();
+        load();
+      });
+    });
+  }
+
+  // ===== code 过滤提示条（可移除）=====
+  function renderFilterBar(){
+    if(!state.code){ elBar.hidden = true; elBar.innerHTML = ''; return; }
+    elBar.hidden = false;
+    elBar.innerHTML = '<span>仅显示标的 <b>' + esc(state.code) + '</b> 的报告</span>' +
+      '<span class="pill">' + esc(state.code) + '<button type="button" id="clearCode" aria-label="清除标的筛选">×</button></span>';
+    var cb = document.getElementById('clearCode');
+    if(cb) cb.addEventListener('click', function(){
+      state.code = ''; state.page = 1; syncUrl(); load();
+    });
+  }
+
+  function syncUrl(){
+    var p = [];
+    if(state.type) p.push('type=' + encodeURIComponent(state.type));
+    if(state.code) p.push('code=' + encodeURIComponent(state.code));
+    var url = location.pathname + (p.length ? '?' + p.join('&') : '');
+    try { history.replaceState(null, '', url); } catch(e){}
+  }
+
+  // ===== 三态分离：空态 vs 不可用态（本项目两次误报事故的铁律）=====
+  function renderEmpty(){
+    elMeta.textContent = '共 0 份报告';
+    if(state.type || state.code || state.q){
+      showState(
+        '<div class="t">当前筛选下没有报告</div>' +
+        '<div class="d">换个类型或关键词试试。</div>'
+      );
+      return;
+    }
+    showState(
+      '<div class="t">你还没有生成过报告</div>' +
+      '<div class="d">报告在个股详情页或板块详情页点击「AI生成…报告」后生成，生成过的会一直留在这里。</div>' +
+      '<div class="btns">' +
+        '<a class="btn" href="stock.html">去个股页生成</a>' +
+        '<a class="btn" href="sector.html">去板块页生成</a>' +
+      '</div>'
+    );
+  }
+
+  function renderUnavailable(){
+    elMeta.textContent = '';
+    showState(
+      '<div class="t">报告库暂不可用</div>' +
+      '<div class="d">这不是「你没有报告」——当前读不到报告存储目录（通常是权限或路径异常）。<br>稍后重试，若持续如此请检查服务端日志。</div>' +
+      '<button class="retry" id="retryBtn">重新加载</button>'
+    );
+    var b = document.getElementById('retryBtn');
+    if(b) b.addEventListener('click', function(){ load(); });
+  }
+
+  function visible(items){
+    var kw = state.q.trim().toLowerCase();
+    if(!kw) return items;
+    return items.filter(function(it){
+      return String(it.name || '').toLowerCase().indexOf(kw) >= 0
+          || String(it.code || '').toLowerCase().indexOf(kw) >= 0
+          || String(it.bk_name || '').toLowerCase().indexOf(kw) >= 0
+          || String(it.report_type_label || '').toLowerCase().indexOf(kw) >= 0;
+    });
+  }
+
+  function buildRow(it){
+    var row = document.createElement('div');
+    row.className = 'row';
+
+    var facts = [];
+    if(it.generated_at) facts.push('<span>' + esc(it.generated_at) + '</span>');
+    if(it.data_source) facts.push('<span>数据源 ' + esc(it.data_source) + '</span>');
+    if(it.size_kb) facts.push('<span>' + it.size_kb + ' KB</span>');
+    // 可信度：AI 是否参与 / 数据校验告警 —— 缺字段不渲染，不编造
+    if(it.llm_ok === false) facts.push('<span>AI 结论未启用</span>');
+    if(it.validation_warnings > 0) {
+      facts.push('<span class="warn">' + it.validation_warnings + ' 条数据校验告警</span>');
+    }
+    if(it.chart_offline === false) facts.push('<span>图表依赖外部 CDN</span>');
+
+    // 标的主体：名称 + 代码；行业对比额外显示对比基准板块（缺失时只显示代号，不报错）
+    var subj = '<div class="n">' + esc(it.name || it.code) +
+               '<span class="c">' + esc(it.code) + '</span>' +
+               (it.bk ? '<span class="bk">对比基准 ' + esc(it.bk_name || it.bk) + '</span>' : '') +
+               '</div>';
+
+    // 动作：打开报告（新标签，持久链接）+ 类型感知的主体入口
+    // subject_url 由服务端算且只在标的主体合法时下发 → 板块报告不会出现「查看个股详情」
+    var acts = '<a class="act primary" href="' + esc(it.view_url) + '" target="_blank" rel="noopener">打开报告</a>';
+    if(it.subject_url){
+      var label = (it.report_type === 'board') ? '前往板块页' : '查看个股详情';
+      acts += '<a class="act ghost" href="' + esc(it.subject_url) + '">' + label + '</a>';
+    }
+    // 删除入口：**能不能删由服务端下发的 deletable 决定**（legacy 共享目录为 false）。
+    // 前端不自建「这算不算我的」判断 —— 那是权限逻辑，有第二份实现就会与后端漂移。
+    // 用 data-del 传 report_id 并靠事件委托绑定：行在每次 renderList 时整体重建，
+    // 逐行 addEventListener 会在重渲染后失效（症状是"删过一次之后按钮就点不动了"）。
+    //
+    // 导出入口（F-07）：放在删除**之前** —— 它是这份报告的常规离开方式，
+    // 而删除是破坏性操作，视觉上要让两者分得开。
+    //   ⚠️ 用同一个 `deletable !== false` 作为可见条件：legacy 共享目录里的条目
+    //   **本来就打不开**（路径护栏只认「当前用户根」，共享根不在其内），导出同理，
+    //   故不渲染按钮 —— 否则用户点了只会拿到一个 404 提示。这不是新规则，
+    //   正是「能打开的报告 ⟺ 能导出的报告」这条等价关系在界面上的投影。
+    if(it.deletable !== false){
+      var expOff = !exportCap || exportCap.available === false;
+      var expWhy = (exportCap && exportCap.reason) || '导出当前不可用';
+      acts += '<button type="button" class="act ghost exp" data-exp="' + esc(it.report_id) + '"' +
+              (expOff ? ' disabled title="' + esc(expWhy) + '"' : '') + '>导出</button>';
+      acts += '<button type="button" class="act danger" data-del="' + esc(it.report_id) + '">删除</button>';
+    }
+
+    row.innerHTML =
+      '<span class="badge t-' + esc(it.report_type) + '">' + esc(it.report_type_label) + '</span>' +
+      '<div class="subj">' + subj +
+        '<div class="facts">' + facts.join('') + '</div>' +
+      '</div>' +
+      '<div class="acts">' + acts + '</div>';
+    return row;
+  }
+
+  // ===== 类型分区渲染（一套逻辑：默认多分区，聚焦时单分区；空分区不渲染）=====
+  function renderList(){
+    renderBulk();                 // 批量条与列表同源（都基于 visible()），一起刷新
+    var arr = visible(state.items);
+    if(!arr.length){
+      if(!state.items.length && !state.type && !state.code) renderEmpty();
+      else if(!state.items.length) renderEmpty();
+      else {
+        elMeta.textContent = '共 ' + state.items.length + ' 份 · 匹配 0 份';
+        showState('<div class="t">没有匹配的报告</div><div class="d">换个关键词试试，或清空搜索框。</div>');
+      }
+      return;
+    }
+
+    // 分组：按 REPORT_TYPE_ORDER 的到达顺序（服务端 items 已含 label，前端不自建顺序表）
+    var order = [], groups = {};
+    arr.forEach(function(it){
+      if(!groups[it.report_type]){ groups[it.report_type] = []; order.push(it.report_type); }
+      groups[it.report_type].push(it);
+    });
+
+    elList.innerHTML = '';
+    var frag = document.createDocumentFragment();
+    order.forEach(function(key){
+      var sec = document.createElement('div');
+      sec.className = 'section';
+      var h = document.createElement('div');
+      h.className = 'section-head';
+      h.innerHTML = '<h2>' + esc(typeLabel(key)) + '</h2><span class="count">' + groups[key].length + ' 份</span>';
+      var l = document.createElement('div');
+      l.className = 'list';
+      groups[key].forEach(function(it){ l.appendChild(buildRow(it)); });
+      sec.appendChild(h); sec.appendChild(l);
+      frag.appendChild(sec);
+    });
+    elList.appendChild(frag);
+    updateMeta(arr.length);
+  }
+
+  function updateMeta(shown){
+    var parts = [];
+    parts.push('共 ' + state.total + ' 份');
+    if(shown != null && shown !== state.total) parts.push('当前显示 ' + shown + ' 份');
+    if(state.type) parts.push('类型：' + typeLabel(state.type));
+    elMeta.textContent = parts.join(' · ');
+  }
+
+  function renderMore(){
+    if(state.items.length < state.total){
+      elMore.hidden = false;
+      elMore.innerHTML = '<button type="button" id="moreBtn">加载更多（还有 ' +
+        (state.total - state.items.length) + ' 份）</button>';
+      document.getElementById('moreBtn').addEventListener('click', function(){
+        state.page += 1; load(true);
+      });
+    } else {
+      elMore.hidden = true; elMore.innerHTML = '';
+    }
+  }
+
+  // ===== 删除（F-06 扩展）：二次确认 → 服务端物理删除 → 按回执更新本地列表 =====
+
+  var pending = null;   // 待确认的 report_id 列表
+
+  function openConfirm(items){
+    pending = items.map(function(it){ return it.report_id; });
+    var single = items.length === 1;
+    document.getElementById('delTitle').textContent =
+      single ? '删除这份报告？' : '删除 ' + items.length + ' 份报告？';
+    document.getElementById('delDesc').textContent =
+      single ? ('《' + (items[0].name || items[0].code) + ' · ' + items[0].report_type_label + '》')
+             : '以下报告的目录将被整体移除：';
+    var ul = document.getElementById('delList');
+    if(single){ ul.hidden = true; ul.innerHTML = ''; }
+    else {
+      ul.hidden = false;
+      ul.innerHTML = items.map(function(it){
+        return '<li>' + esc(it.name || it.code) + ' · ' + esc(it.report_type_label) +
+               (it.generated_at ? ' · ' + esc(it.generated_at) : '') + '</li>';
+      }).join('');
+    }
+    elDelGo.disabled = false;
+    elDelGo.textContent = single ? '删除' : '删除 ' + items.length + ' 份';
+    elModal.hidden = false;
+    try { elDelGo.focus(); } catch(e){}
+  }
+
+  function closeConfirm(){
+    elModal.hidden = true;
+    pending = null;
+  }
+
+  function doRemove(){
+    if(!pending) return;
+    var ids = pending.slice();
+    elDelGo.disabled = true;
+    elDelGo.textContent = '删除中…';
+    fetch(API_REMOVE, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({report_ids: ids})
+    })
+    .then(function(r){
+      if(r.status === 401){ toLogin(); return null; }
+      return r.json().then(function(d){ return {ok:r.ok, d:d}; });
+    })
+    .then(function(res){
+      if(!res) return;
+      closeConfirm();
+      if(!res.ok){ flash((res.d && res.d.detail) || '删除失败，请稍后重试'); return; }
+      applyRemoved(res.d || {});
+    })
+    .catch(function(){ closeConfirm(); flash('删除失败，请检查网络后重试'); });
+  }
+
+  // 一律以**服务端回执**更新列表，不做乐观删除：服务端可能拒删（正在生成 / 已不存在），
+  // 乐观删除会造成「界面已消失、刷新又回来」的幽灵条目。
+  function applyRemoved(d){
+    var gone = {};
+    (d.removed_ids || []).forEach(function(id){ gone[id] = true; });
+    var removed = state.items.filter(function(it){ return gone[it.report_id]; });
+    if(removed.length){
+      state.items = state.items.filter(function(it){ return !gone[it.report_id]; });
+      state.total = Math.max(0, state.total - removed.length);
+      // chips 的计数是服务端给的「过滤前全量镜像」，这里同步减掉，否则删完 chip 还挂着旧数字
+      removed.forEach(function(it){
+        state.types.forEach(function(t){
+          if(t.key === it.report_type) t.count = Math.max(0, t.count - 1);
+        });
+      });
+      renderChips(); renderList(); renderMore();
+    }
+
+    // 「没删掉的原因」逐条说清楚 —— 静默少删是这类功能最难排查的故障
+    var msgs = [];
+    if(d.deleted) msgs.push('已删除 ' + d.deleted + ' 份报告');
+    var busy = (d.skipped_busy || []).length;
+    if(busy) msgs.push(busy + ' 份正在生成中，已跳过（等生成完成后再删）');
+    if(d.not_found) msgs.push(d.not_found + ' 份未找到（可能已被删除，或位于共享目录）');
+    var bad = (d.failed || []).length;
+    if(bad) msgs.push(bad + ' 份删除失败');
+    if(d.tasks_cleared) msgs.push('同时清理了 ' + d.tasks_cleared + ' 条任务记录');
+    flash(msgs.length ? msgs.join('；') : '没有可删除的报告。');
+
+    // 任务中心里指向这些报告的记录已被服务端清掉 → 通知它立刻刷新，
+    // 否则那份「最近完成」会挂着一个点开就 404 的链接（N-21 的形状）
+    if(d.deleted){
+      document.dispatchEvent(new CustomEvent('tradeai:report-removed', {
+        detail: { report_ids: d.removed_ids || [] }
+      }));
+    }
+    if(bad || busy) load();   // 有异常项 → 与服务端对齐一次，别让本地状态悄悄漂移
+  }
+
+  // 批量条：只在**有筛选条件**时出现（type / code / 关键词），且至少 2 份
+  function renderBulk(){
+    var arr = visible(state.items);
+    var filtered = !!(state.type || state.code || state.q.trim());
+    if(!filtered || arr.length < 2){ elBulk.hidden = true; elBulk.innerHTML = ''; return; }
+    elBulk.hidden = false;
+    elBulk.innerHTML = '<span>当前筛选出 <b>' + arr.length + '</b> 份报告</span>' +
+      '<span class="sp"></span>' +
+      '<button type="button" id="bulkDel">删除这 ' + arr.length + ' 份</button>';
+    document.getElementById('bulkDel').addEventListener('click', function(){ openConfirm(arr.slice()); });
+  }
+
+  // ===== 导出（F-07）：把报告换成**对方也打得开的载体** =====
+  //
+  // 目标与场景：「报告能发给别人」。打开报告需要账号，而发给同事/客户时对方没有账号 ——
+  // 三种格式就是这一个目标的三个出口，故每个按钮直接把场景写在上面，用户不必猜。
+  //
+  // ⚠️ 走 fetch + blob 而不是 `<a href="/api/report/export/…" download>`：
+  //   直链读不到 `X-Export-Warnings`（图表未取到这类告警），也无法在
+  //   `Content-Disposition` 缺失时于前端兜底文件名。代价是文件字节过一遍内存
+  //   （导出物是百 KB ~ 几 MB 量级，可接受）。
+  // ⚠️ 服务端渲染一份报告要数秒（真实浏览器执行页面 JS 画图表），故必须给出
+  //   「正在生成…」的进行态 —— 否则就是「点了没反应」，本项目的 N-24 形状。
+  var expPending = null;
+
+  function openExport(it){
+    if(!exportCap || exportCap.available === false){
+      flash((exportCap && exportCap.reason) || '导出当前不可用');
+      return;
+    }
+    expPending = it;
+    document.getElementById('expDesc').textContent =
+      '《' + (it.name || it.bk_name || it.code) + ' · ' + it.report_type_label + '》' +
+      (it.generated_at ? ' · ' + it.generated_at : '');
+    var fmts = exportCap.formats || [];
+    elExpOpts.innerHTML = fmts.map(function(f){
+      return '<button type="button" data-fmt="' + esc(f.key) + '">' +
+             '<b>' + esc(f.label) + '</b><span>' + esc(f.hint || '') + '</span></button>';
+    }).join('');
+    // Word 的定位必须**事前**说清楚：它是 HTML 的简化重排，不是像素还原。
+    // 不说，用户下载后会觉得"缩水了"（这是导出功能最常见的信任问题）。
+    document.getElementById('expNote').innerHTML =
+      'PDF 与长图和在线打开的报告<b>完全一致</b>（同一套渲染路径）。' +
+      'Word 版是可编辑、可引用文字与数据的结构化文档，版式会重排为标题 + 段落 + 表格，' +
+      '<b>不做像素还原</b>。';
+    var c = document.getElementById('expCancel');
+    if(c) c.disabled = false;
+    elExpModal.hidden = false;
+    var first = elExpOpts.querySelector('button');
+    if(first){ try { first.focus(); } catch(e){} }
+  }
+
+  function closeExport(){
+    elExpModal.hidden = true;
+    expPending = null;
+    var c = document.getElementById('expCancel');
+    if(c) c.disabled = false;
+    elExpOpts.innerHTML = '';   // 清掉禁用态，下次打开重建
+  }
+
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'report';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // 立刻 revoke 在部分浏览器上会让下载中断，延后释放
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
+  // 从 Content-Disposition 取文件名：优先 RFC 5987 的 filename*（中文名走这条），
+  // 退回 filename="…"。取不到返回 null，由调用方用列表项信息兜底拼一个 ——
+  // 兜底是必要的：下载名是"能发给别人"的一部分，退化成随机名等于这件事做了一半。
+  function filenameFromCD(cd){
+    if(!cd) return null;
+    var m = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    if(m){ try { return decodeURIComponent(m[1].trim()); } catch(e){} }
+    m = /filename="([^"]+)"/i.exec(cd);
+    return m ? m[1] : null;
+  }
+
+  function fallbackFilename(it, fmt){
+    var ext = ({pdf:'pdf', png:'png', docx:'docx'})[fmt] || 'bin';
+    var base = [it.name || it.bk_name || it.code, it.report_type_label, it.generated_at]
+      .filter(Boolean).join('_').replace(/[\\/:*?"<>|\x00-\x1f]/g, '');
+    return (base || 'report') + '.' + ext;
+  }
+
+  function fmtLabel(key){
+    var out = key;
+    var arr = (exportCap && exportCap.formats) || [];
+    for(var i=0;i<arr.length;i++){ if(arr[i].key === key) out = arr[i].label; }
+    return out;
+  }
+
+  function doExport(fmt){
+    if(!expPending) return;
+    var it = expPending;
+    var label = fmtLabel(fmt);
+    var btns = elExpOpts.querySelectorAll('button');
+    for(var i=0;i<btns.length;i++) btns[i].disabled = true;
+    var c = document.getElementById('expCancel');
+    if(c) c.disabled = true;
+    document.getElementById('expNote').innerHTML =
+      '正在生成 ' + esc(label) + '…（需要数秒，请不要关闭本页）';
+
+    fetch(API_EXPORT + encodeURIComponent(it.report_id) + '?fmt=' + encodeURIComponent(fmt),
+          {credentials:'same-origin'})
+      .then(function(r){
+        if(r.status === 401){ toLogin(); return null; }
+        if(!r.ok){
+          // 400/404/409/503/500 都是 JSON 信封，detail 是给用户看的原因
+          return r.json().then(function(d){
+            return {err: (d && d.detail) || ('导出失败（HTTP ' + r.status + '）')};
+          }).catch(function(){ return {err: '导出失败（HTTP ' + r.status + '）'}; });
+        }
+        var warn = r.headers.get('X-Export-Warnings');
+        var name = filenameFromCD(r.headers.get('Content-Disposition'));
+        return r.blob().then(function(b){
+          return {blob:b, name:name, warn:warn, bytes:b.size};
+        });
+      })
+      .then(function(res){
+        if(!res) return;
+        if(res.err){ closeExport(); flash(res.err); return; }
+        if(!res.bytes){ closeExport(); flash('导出结果为空，请稍后重试'); return; }
+        downloadBlob(res.blob, res.name || fallbackFilename(it, fmt));
+        closeExport();
+        // 告警必须说出来：文件已经下载了，"图表没取到"这类事只能靠这条提示传达，
+        // 否则用户会把一份缺图的 PDF 当成完整报告发出去（静默残缺 = 最坏的失败方式）。
+        var msg = '已导出 ' + label + '（' + Math.round(res.bytes / 1024) + ' KB）';
+        if(res.warn){
+          var w = res.warn;
+          try { w = decodeURIComponent(w); } catch(e){}
+          msg += '。注意：' + w;
+        }
+        flash(msg);
+      })
+      .catch(function(){ closeExport(); flash('导出失败，请检查网络后重试'); });
+  }
+
+  elExpOpts.addEventListener('click', function(e){
+    var t = e.target;
+    var b = (t && t.closest) ? t.closest('[data-fmt]') : null;
+    if(!b || b.disabled) return;
+    doExport(b.getAttribute('data-fmt'));
+  });
+  elExpModal.addEventListener('click', function(e){
+    var t = e.target;
+    if(t && t.getAttribute && t.getAttribute('data-exp-cancel') !== null) closeExport();
+  });
+
+  // 事件委托：行是整体重建的，逐行绑定会在重渲染后失效（症状是「删过一次后按钮点不动」）
+  elList.addEventListener('click', function(e){
+    var t = e.target;
+    if(!t || !t.closest) return;
+    var exp = t.closest('[data-exp]');
+    if(exp){
+      var idE = exp.getAttribute('data-exp');
+      var itE = null;
+      state.items.forEach(function(x){ if(x.report_id === idE) itE = x; });
+      if(itE) openExport(itE);
+      return;
+    }
+    var b = t.closest('[data-del]');
+    if(!b) return;
+    var id = b.getAttribute('data-del');
+    var it = null;
+    state.items.forEach(function(x){ if(x.report_id === id) it = x; });
+    if(it) openConfirm([it]);
+  });
+
+  elDelGo.addEventListener('click', doRemove);
+  elModal.addEventListener('click', function(e){
+    var t = e.target;
+    if(t && t.getAttribute && t.getAttribute('data-del-cancel') !== null) closeConfirm();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !elExpModal.hidden) closeExport();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !elModal.hidden) closeConfirm();
+  });
+
+  function load(append){
+    if(!append){ state.page = 1; elMeta.textContent = '加载中…'; }
+    var p = ['page=' + state.page, 'page_size=' + PAGE_SIZE];
+    if(state.type) p.push('type=' + encodeURIComponent(state.type));
+    if(state.code) p.push('code=' + encodeURIComponent(state.code));
+
+    fetch(API_LIST + '?' + p.join('&'), {credentials:'same-origin'})
+      .then(function(r){
+        if(r.status === 401){ toLogin(); return null; }
+        return r.json().then(function(d){ return {ok:r.ok, d:d}; });
+      })
+      .then(function(res){
+        if(!res) return;
+        if(!res.ok){ flash((res.d && res.d.detail) || '加载失败，请稍后重试'); return; }
+        var d = res.d || {};
+
+        // 不可用态优先于空态（否则权限异常会被显示成「你没有报告」）
+        if(d.root_available === false){ renderUnavailable(); return; }
+
+        state.types = d.types || [];
+        state.total = d.total || 0;
+        // 导出能力随列表一起下发（服务端只算一次，见 exportCap 声明处说明）
+        exportCap = d.export || null;
+        var page = d.items || [];
+        state.items = append ? state.items.concat(page) : page;
+
+        // 单条 meta 损坏 → 明确告知，不静默吞掉
+        var w = d.warnings || {};
+        if(w.damaged) flash('有 ' + w.damaged + ' 份报告元信息损坏，已跳过。');
+        if(w.owner_mismatch) flash('有 ' + w.owner_mismatch + ' 份报告的归属标记与目录不一致，已按目录归属展示。');
+
+        renderChips();
+        renderFilterBar();
+        if(!state.items.length){ renderEmpty(); renderBulk(); renderMore(); return; }
+        renderList();
+        renderMore();
+      })
+      .catch(function(){ flash('加载失败，请检查网络后重试'); elMeta.textContent = ''; });
+  }
+
+  elQ.addEventListener('input', function(e){
+    state.q = e.target.value || '';
+    if(state.items.length) renderList();   // 内部会一并刷新批量条
+    else renderBulk();
+  });
+
+  // ===== F-04：任务完成 → 自动重载报告库列表 =====
+  // 服务端在 `_worker` 里**先 save_report 再置 SUCCESS**，因此本事件到达时磁盘上
+  // 必然已有该产物 —— 此时重载列表就能看到它，即「生成完成后自动进入报告库」。
+  // 不做轮询：事件由 js/task_center.js 在检测到状态迁移时派发，一次任务一次刷新。
+  document.addEventListener('tradeai:task-done', function(){
+    load();
+    flash('有新报告已生成，已加入下方列表。');
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

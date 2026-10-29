@@ -38,21 +38,9 @@
   window.addEventListener('scroll', onScroll);
   onScroll();
 
-  // ===== 功能卡片点击反馈（预留路由） =====
-  document.querySelectorAll('.feature-card').forEach((card) => {
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', () => {
-      const id = card.getAttribute('id');
-      if (id === 'stock') {
-        console.log('进入个股分析模块');
-        // window.location.href = '/stock.html';
-      } else if (id === 'sector') {
-        console.log('进入板块洞察模块');
-        // window.location.href = '/sector.html';
-      } else if (id === 'report') {
-        console.log('进入智能报告模块');
-        // window.location.href = '/report.html';
-      }
-    });
-  });
+  // ===== 功能卡片 =====
+  // 四张卡在 index.html 中已是语义化链接（<a class="feature-card" href="…">），
+  // 故此处**不再绑定任何点击跳转** —— 若加 JS 跳转，Ctrl/⌘+点击会在新标签打开的
+  // 同时把当前页也跳走（双重导航）。焦点态样式见 css/style.css 的
+  // `.feature-card:focus-visible`。
 })();

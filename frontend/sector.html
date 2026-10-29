@@ -80,6 +80,13 @@
   .chg.down{color:var(--down);}
   .chg.flat{color:var(--muted);}
   .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:15px;}
+  /* 行情源不可用态：比普通空态更显眼，并给一个重试入口 */
+  .empty .sub{font-size:13px;line-height:1.7;margin-top:8px;color:var(--muted);}
+  .btn-retry{
+    margin-top:16px;height:36px;padding:0 18px;border:1px solid var(--blue);background:#fff;color:var(--blue);
+    font-size:14px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;
+  }
+  .btn-retry:hover{background:var(--blue);color:#fff;}
   .pager{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:28px;flex-wrap:wrap;}
   .pager button{
     min-width:38px;height:36px;padding:0 12px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
@@ -219,6 +226,23 @@
     if(q) q.value = state.q;
     ListState.cleanUrl();
   }
+  // ===== URL 直达参数(?q= / ?type=) =====
+  // 首页全局搜索(F-02)「查看全部 N 个板块」跳转而来。全新导航不会走上面的
+  // ListState.load(只认「返回导航」, 见 list_state.js:isReturnNav), 故单独读取。
+  // 优先级: 返回导航(restore) > 直达参数 > 默认(行业板块 / 第 1 页)。
+  if(!RESTORE){
+    const _ud = new URLSearchParams(location.search);
+    const _q = _ud.get('q');
+    if(_q && _q.trim()){
+      state.q = _q.trim();
+      if(q) q.value = state.q;
+    }
+    const _t = _ud.get('type');
+    if(_t === 'industry' || _t === 'concept'){
+      state.type = _t;
+      if(typeSel) typeSel.value = state.type;
+    }
+  }
   function snapshot(){
     return { type: state.type, sort: state.sort, order: state.order, page: state.page,
              q: state.q, pageSize: PER_PAGE, scrollY: window.scrollY };
@@ -241,6 +265,13 @@
       d.code.toLowerCase().includes(kw) ||
       (d.leader || '').toLowerCase().includes(kw)
     );
+  }
+
+  // 关键词要拼进 innerHTML，必须转义（否则搜索框里输入标签会被当 HTML 执行）
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
   }
 
   // ===== 排序（兜底模式用, 先排序、后分页） =====
@@ -294,14 +325,25 @@
   }
 
   // ===== API 模式渲染(后端已排序+分页, 前端直接出图) =====
+  // 后端会返回 data_status：
+  //   ok          正常（含「搜索无命中」这种真正的空结果）
+  //   stale       实时源失败，展示的是最近一次成功抓取的清单（需标注时间）
+  //   unavailable 行情源故障 —— **绝不是「没有这个板块」**，必须与「未找到」分开说
+  // 背景：2026-09-23 东财 push2* 的 clist 路径被定向限流，后端旧实现静默返回 total=0，
+  // 页面便渲染「未找到匹配「」的板块」，与股票页那次事故同一错误类别。
   function renderApi(data){
+    const status = data.data_status || 'ok';
+    if(status === 'unavailable'){
+      renderUnavailable();
+      return;
+    }
     const boards = data.boards || [];
     const total = data.total || 0;
     const cur = data.page || 1;
     const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
     list.innerHTML = '';
     if(total === 0){
-      list.innerHTML = '<div class="empty">未找到匹配「'+ state.q +'」的板块</div>';
+      list.innerHTML = '<div class="empty">未找到匹配「'+ esc(state.q) +'」的板块</div>';
       meta.textContent = '共 0 个板块';
       pager.innerHTML = '';
       return;
@@ -309,9 +351,24 @@
     const frag = document.createDocumentFragment();
     boards.forEach(d => frag.appendChild(buildRow(d)));
     list.appendChild(frag);
-    meta.textContent = '共 ' + total + ' ' + UNIT[state.type] + '板块 · 第 ' + cur + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 个';
+    meta.textContent = '共 ' + total + ' ' + UNIT[state.type] + '板块 · 第 ' + cur + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 个'
+      + (status === 'stale'
+          ? ' · 非实时数据（数据时间 ' + (data.data_updated || '未知') + '）'
+          : '');
     renderPager(totalPages, cur);
     restoreScrollOnce();   // 首屏渲染完成后恢复离开前的滚动位置
+  }
+
+  // ===== 行情源不可用：明写「不是没有这个板块」，并给重试入口 =====
+  function renderUnavailable(){
+    list.innerHTML = '<div class="empty">'
+      + '<div>板块行情暂不可用</div>'
+      + '<div class="sub">行情数据源（东方财富）当前无法连接，本地也还没有可用的板块缓存。<br>'
+      + '这不是「没有这个板块」，稍后重试即可。</div>'
+      + '<button class="btn-retry" onclick="location.reload()">重新加载</button>'
+      + '</div>';
+    meta.textContent = '数据源暂不可用';
+    pager.innerHTML = '';
   }
 
   // ===== 兜底模式渲染(客户端过滤+排序+分页) =====
@@ -325,7 +382,7 @@
     state.page = pg;
     list.innerHTML = '';
     if(rows.length === 0){
-      list.innerHTML = '<div class="empty">未找到匹配「'+ state.q +'」的板块</div>';
+      list.innerHTML = '<div class="empty">未找到匹配「'+ esc(state.q) +'」的板块</div>';
       meta.textContent = '共 0 个板块';
       pager.innerHTML = '';
       return;
@@ -334,7 +391,9 @@
     const frag = document.createDocumentFragment();
     rows.slice(start, start + PER_PAGE).forEach(d => frag.appendChild(buildRow(d)));
     list.appendChild(frag);
-    meta.textContent = '共 ' + rows.length + ' 个板块 · 第 ' + pg + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 个 · 离线兜底';
+    // 内置 FALLBACK 是**手写的演示数据**，不是真实快照。标注必须写明是演示数据，
+    // 否则用户会把「半导体 +2.41%」这种数字当成真实行情——金融产品里这是硬伤。
+    meta.textContent = '共 ' + rows.length + ' 个板块 · 第 ' + pg + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 个 · 演示数据（非真实行情）';
     renderPager(totalPages, pg);
     restoreScrollOnce();   // 首屏渲染完成后恢复离开前的滚动位置
   }
@@ -346,6 +405,12 @@
   }
 
   // ===== 统一入口: 优先走 API(真实数据动态返回) =====
+  // 注意两种失败要分开处理：
+  //   1) HTTP 非 2xx / 网络异常  → 走本页内置演示数据（并明确标注是演示数据）
+  //   2) HTTP 200 但 data_status=unavailable → **不能用演示数据糊过去**，
+  //      因为这次是「后端连不上数据源」，需要如实告知并给重试入口（见 renderApi）。
+  //      此前只判断 !r.ok，于是「200 + total=0」被当成正常空结果，页面显示
+  //      「未找到匹配「」的板块」——这正是本次要修的误报。
   function load(){
     showLoading();
     const params = new URLSearchParams({
@@ -355,7 +420,7 @@
     fetch(API_URL + '?' + params.toString())
       .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => { mode = 'api'; renderApi(data); })
-      .catch(err => { console.warn('API 不可用, 降级本地示例数据:', err); useFallback(); });
+      .catch(err => { console.warn('API 不可达, 改用内置演示数据:', err); useFallback(); });
   }
 
   function goPage(p){
@@ -483,5 +548,7 @@
   // ===== 启动: 默认展示「行业板块」数据 =====
   load();
 </script>
+<!-- F-04 报告任务中心：板块报告由此页发起，跑中进度需全站可见 -->
+<script src="js/task_center.js"></script>
 </body>
 </html>

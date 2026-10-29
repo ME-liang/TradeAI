@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -28,20 +27,28 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ..data import em as _em
 from ..llm import get_router, load_prompt
 from ..llm.base import LLMRequest
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+"""仓库根。**必须是 parents[3]**：本文件在 src/fundamental_agent/report_types/ 下，
+共 3 层包目录，取了 3 次 parent 只会到 src/。
+
+2026-09-25 事故：此处原为 parent.parent.parent(= <repo>/src)，于是
+_STOCKS_JSON 指向 <repo>/src/frontend/data/stocks.json —— **该路径不存在**，
+_load_market_snapshot() 恒返回 None，竞品发现静默退化为「实时 clist 全市场分页」，
+本地快照这条主路径从未生效。东财 push2delay/push2 被限流当天，实时兜底也失败，
+用户侧表现为「竞品识别失败：未在市场快照中找到该股票」。
+同目录的 chart_assets.py 用的就是 parents[3]，可作为该写法的参照。"""
+
 _STOCKS_JSON = _PROJECT_ROOT / "frontend" / "data" / "stocks.json"
 
 COMPETITOR_N = 5          # 竞品数量（不含目标公司）
 QUANT_BUDGET_S = 40       # 六家定量取数总时长预算（秒）
 PROFILE_BUDGET_S = 30     # 六家画像取数总时长预算（秒）
-
-_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-_REF = "https://quote.eastmoney.com/"
 
 # LLM 示例/占位泄漏拦截（与 overview 同思路，精简为本报告所需的最小集合）
 _PLACEHOLDER_MARKERS = ("示例·", "示例:", "示例：", "待填写", "XX 股份有限公司", "TODO")
@@ -57,37 +64,32 @@ _PROFILE_CACHE: dict[str, dict] = {}
 _PROFILE_FAIL_CACHE: dict[str, float] = {}
 _PROFILE_LOCK = threading.Lock()
 
+# 远程全市场快照缓存。仅在「本地快照缺目标股」时才用到，而拉取代价很高
+# （最多 60 页 × 100 条），故按 TTL 复用，避免同一进程内反复全量拉取。
+_REMOTE_SNAP: dict = {"ts": 0.0, "stocks": []}
+_REMOTE_SNAP_LOCK = threading.Lock()
+_REMOTE_SNAP_TTL_S = 600
+
 
 # ---------------------------------------------------------------------------
-# 基础取数工具（与前端 server.py 同源的 curl 封装）
+# 基础取数工具：**实现已统一到 data/em.py**（主机池只应有一处定义，见 N-18）。
+# 这里保留同名薄包装，理由有二：
+#   1) board.py 与 tests/test_industry_snapshot.py 都按名字引用过它们；
+#   2) `_curl_json_hosts(hosts, path)` 的 hosts 由调用方传入，便于测试注入。
+# 新增代码请直接用 `_em.get_json()`，不要再在本文件写主机字面量。
 # ---------------------------------------------------------------------------
 def _curl_json(url: str, timeout: int = 10):
-    try:
-        out = subprocess.check_output(
-            ["curl", "-s", "-m", str(timeout), "-A", _UA, "-e", _REF, url],
-            timeout=timeout + 5,
-        )
-        if out.strip():
-            return json.loads(out.decode("utf-8"))
-    except Exception:
-        return None
-    return None
+    """单 URL GET → JSON（失败 None）。等价于 `em.curl_json`。"""
+    return _em.curl_json(url, timeout=timeout)
 
 
 def _curl_json_hosts(hosts: list[str], path: str, timeout: int = 10):
-    for host in hosts:
-        d = _curl_json(host.rstrip("/") + path, timeout=timeout)
-        if d is not None:
-            return d
-    return None
+    """按主机健康度降级取数；返回首个成功结果。等价于 `em.get_json`。"""
+    return _em.get_json(path, timeout=timeout, hosts=hosts)
 
 
 def _secid(code: str) -> str:
     return ("1." if code[:1] in ("6", "9") else "0.") + code
-
-
-def _fund_secucode(code: str) -> str:
-    return code + ("." + ("SH" if code[:1] in ("6", "9") else ("BJ" if code[:1] in ("4", "8") else "SZ")))
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +116,8 @@ def _fetch_market_snapshot_remote() -> list[dict]:
             "fields": "f12,f14,f100,f20,f9,f23",
             "pn": str(pn), "pz": "100", "po": "1", "np": "1", "fltt": "2", "invt": "2",
         })
-        d = _curl_json_hosts(
-            ["https://push2delay.eastmoney.com", "https://push2.eastmoney.com"],
-            "/api/qt/clist/get?" + q, timeout=10,
-        )
+        # 主机池取自 data/em.py（push2test 在末位兜底，理由见该模块 docstring）
+        d = _curl_json_hosts(_em.PUSH2_HOSTS, "/api/qt/clist/get?" + q, timeout=10)
         diff = ((d or {}).get("data") or {}).get("diff") or []
         if not diff:
             break
@@ -140,6 +140,51 @@ def _fetch_market_snapshot_remote() -> list[dict]:
     return out
 
 
+def _remote_snapshot_cached() -> list[dict]:
+    """带 TTL 缓存的远程全市场快照（失败返回上次结果 / 空列表，绝不抛）。"""
+    now = time.time()
+    with _REMOTE_SNAP_LOCK:
+        cached = list(_REMOTE_SNAP.get("stocks") or [])
+        if cached and now - float(_REMOTE_SNAP.get("ts") or 0.0) < _REMOTE_SNAP_TTL_S:
+            return cached
+    try:
+        stocks = _fetch_market_snapshot_remote()
+    except Exception as e:                      # 兜底路径不允许把异常抛给调用方
+        logger.warning("[industry] 远程全市场快照拉取异常: %s", e)
+        stocks = []
+    if stocks:
+        with _REMOTE_SNAP_LOCK:
+            _REMOTE_SNAP["ts"] = now
+            _REMOTE_SNAP["stocks"] = list(stocks)
+        return stocks
+    return cached
+
+
+def _snapshot_find(code: str) -> tuple[list[dict], dict | None]:
+    """在本地/远程市场快照中定位标的，返回 ``(stocks, target)``。
+
+    本地快照优先；**只有「本地快照里没有这只股票」时**才用远程兜底再查一次。
+    这一条是必须的：本地快照会陈旧（frontend/data/stocks.json 的 updated 字段
+    可能落后数周，其间新上市的标的都不在其中），而原实现仅在「整个文件读不到」
+    时才兜底 —— 于是「文件在、但缺该股」直接判失败。
+
+    注意：**北交所标的两边都查不到**，因为 `_fetch_market_snapshot_remote()` 沿用了
+    前端的 fs 过滤串，其中北交所段 `m:0+t:90` 实测无效（total=None / 0 行，
+    且加不加它对总数毫无影响：均为 5561）。北交所正解是 `m:0+t:81+s:2048`（359 只）。
+    这属独立的市场覆盖问题，未在本处擅自改动 fs（会连带影响列表页与覆盖率分段），
+    见 `.workbuddy/memory/2026-09-25.md`。
+    """
+    stocks = _load_market_snapshot()
+    target = next((r for r in (stocks or []) if r.get("code") == code), None)
+    if target is None:
+        logger.warning("[industry] 本地市场快照未含标的 %s, 改用远程全市场快照兜底", code)
+        remote = _remote_snapshot_cached()
+        rt = next((r for r in remote if r.get("code") == code), None)
+        if rt is not None:
+            return remote, rt
+    return list(stocks or []), target
+
+
 def _fetch_board_members(bk: str) -> list[dict]:
     """按板块代码拉取成员列表（clist fs=b:{bk}，按市值降序）。失败返回空列表。"""
     q = urllib.parse.urlencode({
@@ -147,8 +192,7 @@ def _fetch_board_members(bk: str) -> list[dict]:
         "fields": "f12,f14,f20,f115,f23",   # 代码/名称/总市值/市盈率TTM/市净率
         "pn": "1", "pz": "100", "po": "1", "np": "1", "fltt": "2", "invt": "2",
     })
-    d = _curl_json_hosts(["https://push2.eastmoney.com", "https://push2delay.eastmoney.com"],
-                         "/api/qt/clist/get?" + q, timeout=15)
+    d = _curl_json_hosts(_em.PUSH2_HOSTS, "/api/qt/clist/get?" + q, timeout=15)
     diff = ((d or {}).get("data") or {}).get("diff") or []
 
     def _f(x):
@@ -168,6 +212,7 @@ def discover_competitors(code: str, n: int = COMPETITOR_N,
 
     指定 bk（东财板块代码）时以该板块成员为对比样本（基准由前端下拉框实时选定）；
     未指定或板块拉取失败时，回退为市场快照按东财行业筛选市值前 N。
+    市场快照本地优先（frontend/data/stocks.json），**本地缺该股时再用远程全市场兜底**。
     返回 {"industry": str, "target": {code,name,mcap,pe,pb},
           "competitors": [{code,name,mcap}, ...]}；识别失败返回空 peers。
     """
@@ -181,8 +226,7 @@ def discover_competitors(code: str, n: int = COMPETITOR_N,
                 target = next((r for r in members if r.get("code") == code), None)
                 if target is None:
                     # 板块清单偶发未含目标股（数据同步延迟）: 从市场快照补目标信息
-                    snap = _load_market_snapshot() or _fetch_market_snapshot_remote()
-                    ts = next((r for r in (snap or []) if r.get("code") == code), None)
+                    _snap, ts = _snapshot_find(code)
                     if ts:
                         target = {"code": code, "name": str(ts.get("name") or "").replace(" ", ""),
                                   "mcap": ts.get("mcap"), "pe": ts.get("pe"), "pb": ts.get("pb")}
@@ -194,14 +238,9 @@ def discover_competitors(code: str, n: int = COMPETITOR_N,
                     ind_disp = str(bk_name or "").strip() or f"板块{bk}"
                     return {"industry": ind_disp, "target": target, "competitors": competitors}
             logger.warning("[industry] 板块 %s 成员获取失败, 回退按东财行业识别竞品", bk)
-    stocks = _load_market_snapshot()
-    if not stocks:
-        stocks = _fetch_market_snapshot_remote()
-    if not stocks:
-        return {"industry": "", "target": None, "competitors": []}
-
-    target = next((r for r in stocks if r.get("code") == code), None)
-    if not target:
+    stocks, target = _snapshot_find(code)
+    if not stocks or target is None:
+        logger.warning("[industry] 市场快照未覆盖标的 %s, 竞品识别失败", code)
         return {"industry": "", "target": None, "competitors": []}
     ind = str(target.get("ind") or "")
     peers = [r for r in stocks if r.get("ind") == ind and r.get("code") != code]
@@ -227,8 +266,7 @@ def _fetch_quant_impl(code: str, snap: dict | None) -> dict:
     q = urllib.parse.urlencode({"secid": _secid(code),
                                 "fields": "f186,f188,f184,f115,f162,f23,f116",
                                 "invt": "2", "fltt": "2"})
-    d = _curl_json_hosts(["https://push2.eastmoney.com", "https://push2delay.eastmoney.com"],
-                         "/api/qt/stock/get?" + q, timeout=8)
+    d = _curl_json_hosts(_em.PUSH2_HOSTS, "/api/qt/stock/get?" + q, timeout=8)
     row = (d or {}).get("data") or {}
 
     def _num(x):
@@ -248,17 +286,13 @@ def _fetch_quant_impl(code: str, snap: dict | None) -> dict:
     mcap = _num(row.get("f116"))
     if mcap is not None:
         res["mcap"] = mcap
-    # 2) ROE 主源: F10 主要财务指标 ROEJQ（主机降级 datacenter -> datacenter-web）
+    # 2) ROE 主源: F10 主要财务指标 ROEJQ。走 em 封装是**必须**的：
+    #    `sty` 与 `filter` 都是必填，原实现漏了二者 → 服务端回 9501
+    #    「返回字段参数不能为空」→ 这里恒拿不到值，却被当成「该股没有 ROE」（N-19）。
     try:
-        fq = urllib.parse.urlencode({"type": "RPT_F10_FINANCE_MAINFINADATA",
-                                     "secucode": _fund_secucode(code),
-                                     "client": "PC", "source": "HSF10"})
-        fd = _curl_json_hosts(
-            ["https://datacenter.eastmoney.com", "https://datacenter-web.eastmoney.com"],
-            "/securities/api/data/get?" + fq, timeout=6)
-        fdata = ((fd or {}).get("result") or {}).get("data") or []
-        if fdata:
-            res["roe"] = _num(fdata[0].get("ROEJQ"))
+        _v = _em.f10_roejq(code)
+        if _v is not None:
+            res["roe"] = _v
     except Exception as e:
         logger.warning("[industry] F10 ROE 获取失败(code=%s): %s", code, e)
     # 3) ROE 兜底: akshare 财务分析指标（非东财源）
@@ -327,22 +361,13 @@ def fetch_company_profile(code: str) -> dict:
                     "intro": _s("机构简介"), "industry": _s("所属行业")}
     except Exception as e:
         logger.warning("[industry] cninfo 画像获取失败(code=%s): %s", code, e)
-    # 2) 兜底: 东财 F10 公司概况
+    # 2) 兜底: 东财 F10 公司概况（同走 em 封装，参数理由见 N-19）
     if not info.get("main_business"):
         try:
-            fq = urllib.parse.urlencode({"type": "RPT_F10_BASIC_ORGINFO",
-                                         "secucode": _fund_secucode(code),
-                                         "client": "PC", "source": "HSF10"})
-            fd = _curl_json_hosts(
-                ["https://datacenter.eastmoney.com", "https://datacenter-web.eastmoney.com"],
-                "/securities/api/data/get?" + fq, timeout=8)
-            data = ((fd or {}).get("result") or {}).get("data") or []
-            if data:
-                r = data[0]
-                info.setdefault("main_business", str(r.get("MAIN_BUSINESS") or ""))
-                info.setdefault("scope", str(r.get("BUSINESS_SCOPE") or "")[:400])
-                info.setdefault("intro", str(r.get("ORG_INTRODUCTION") or "")[:400])
-                info.setdefault("industry", str(r.get("INDUSTRY") or ""))
+            _fp = _em.f10_profile(code)
+            for _k in ("main_business", "scope", "intro", "industry"):
+                if _fp.get(_k):
+                    info.setdefault(_k, _fp[_k])
         except Exception as e:
             logger.warning("[industry] 东财画像兜底失败(code=%s): %s", code, e)
     with _PROFILE_LOCK:

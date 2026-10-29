@@ -748,6 +748,8 @@ def run_pipeline(
 
     search_used = False
     writer_mode = ""  # overview 报告的成稿模式：contract / direct（Step 4 溯源字段）
+    # F-06 D4：图表库是否已内联进报告（True=可离线打开；None=不适用/未知，如 writer 直写模式）
+    chart_offline: bool | None = None
     written: str | None = None
     if out_path:
         _emit("渲染报告", 92)
@@ -816,6 +818,7 @@ def run_pipeline(
                         logger.warning("[main] generate_overview_content 异常，降级空壳：%s", e)
                 ov_data = build_overview_data(result, profile_dict, llm_json, use_llm=use_llm)
                 written = render_overview(ov_data, template_dir=template_dir, out_path=out_path)
+                chart_offline = bool(ov_data.get("chart_offline"))
             # Step 3（WorkBuddy 复刻 M4）：渲染后 JS 语法校验闭环（node --check）。
             # 校验失败不阻断产物：contract 模式模板 JS 静态可信，此闭环主要为
             # writer 直写模式（M3）兜底；失败详情留日志，未来据以回传重试。
@@ -879,6 +882,7 @@ def run_pipeline(
         "profile_json": profile_dict,
         "search_used": search_used,
         "writer_mode": writer_mode,
+        "chart_offline": chart_offline,
     }
 
 

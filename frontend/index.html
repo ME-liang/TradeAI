@@ -31,6 +31,8 @@
         <a href="#features">核心功能</a>
         <a href="stock.html">个股分析</a>
         <a href="sector.html">板块洞察</a>
+        <a href="watchlist.html">我的自选</a>
+        <a href="reports.html">报告库</a>
         <a href="#report">智能报告</a>
       </nav>
       <button id="btnLogout" title="退出登录"
@@ -58,6 +60,26 @@
           <p class="hero-desc">
             面向 A 股上市公司，整合财报数据、K 线行情与技术指标，输出专业的基本面分析报告与 AI 投研结论，助力投资决策更高效、更理性。
           </p>
+
+          <!-- ===== F-02 全局搜索框（股票 + 板块，一框直达详情页） =====
+               逻辑见 js/global_search.js；结构与无障碍属性(combobox/listbox)与之一一对应 -->
+          <div class="gsearch" id="gsearch">
+            <div class="gsearch-box">
+              <svg class="gsearch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+              </svg>
+              <input id="gsearchInput" class="gsearch-input" type="text" role="combobox"
+                     aria-expanded="false" aria-controls="gsearchPanel" aria-autocomplete="list"
+                     aria-label="搜索股票或板块" autocomplete="off" autocapitalize="off" spellcheck="false"
+                     placeholder="搜索股票 / 板块，如 600519、力源信息、半导体" />
+              <button type="button" class="gsearch-clear" id="gsearchClear" aria-label="清空搜索词" hidden>×</button>
+              <button type="button" class="gsearch-cancel" id="gsearchCancel">取消</button>
+            </div>
+            <div class="gsearch-panel" id="gsearchPanel" role="listbox" aria-label="搜索结果" hidden></div>
+            <p class="sr-only" id="gsearchLive" aria-live="polite" role="status"></p>
+          </div>
+
           <div class="hero-actions">
             <a href="stock.html" class="btn btn-primary">个股</a>
             <a href="sector.html" class="btn btn-primary">板块</a>
@@ -78,38 +100,41 @@
           <p>覆盖上市公司分析的完整链路</p>
         </div>
 
+        <!-- 四张卡均为语义化链接（<a>）：键盘可达 / 可中键新开 / URL 可复制。
+             落点映射见 docs/F-01-首页卡片导航打通-设计方案.md。
+             ⚠️ 禁止出现裸 stock_detail.html（无 code 会静默打开贵州茅台）。 -->
         <div class="feature-grid">
-          <article class="feature-card" id="stock">
+          <a class="feature-card" id="stock" href="stock.html">
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
             </div>
             <h3>个股深度分析</h3>
             <p>输入股票代码，自动生成盈利能力、成长性、偿债能力、运营效率等多维评估。</p>
-          </article>
+          </a>
 
-          <article class="feature-card" id="sector">
+          <a class="feature-card" id="sector" href="sector.html">
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
             </div>
             <h3>板块行业洞察</h3>
             <p>以申万一级行业为基准，横向对比同业公司的估值与财务表现。</p>
-          </article>
+          </a>
 
-          <article class="feature-card" id="report">
+          <a class="feature-card" id="report" href="reports.html">
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             </div>
             <h3>智能投研报告</h3>
-            <p>整合基本面、技术面与 AI 结论，一键导出可下载的 HTML 分析报告。</p>
-          </article>
+            <p>整合基本面、技术面与 AI 结论，生成可导出 PDF / 长图 / Word 的 HTML 分析报告，历史报告统一收进报告库。</p>
+          </a>
 
-          <article class="feature-card">
+          <a class="feature-card" id="financials" href="stock.html?intent=financials">
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             </div>
             <h3>实时财务追踪</h3>
-            <p>年报、中报、单季度视图自由切换，同比/环比指标动态计算。</p>
-          </article>
+            <p>先选择一只股票，生成基本面报告后可按年报 / 中报 / 单季度切换视图，同比 / 环比指标动态计算。</p>
+          </a>
         </div>
       </div>
     </section>
@@ -137,6 +162,7 @@
   </footer>
 
   <script src="js/main.js"></script>
+  <script src="js/global_search.js"></script>
 
 <script>
   // AUTH-B: 退出登录 → 注销会话(FastAPI 清 ta_session) → 回登录页
@@ -150,5 +176,7 @@
     });
   })();
 </script>
+<!-- F-04 报告任务中心：首页是"从别处回来"的第一落点，必须有全局任务指示器 -->
+<script src="js/task_center.js"></script>
 </body>
 </html>

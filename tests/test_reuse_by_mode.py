@@ -77,3 +77,23 @@ def test_reuse_hit_for_contract_product(monkeypatch):
         import shutil
 
         shutil.rmtree(ROOT / "output" / "reports" / CODE, ignore_errors=True)
+
+
+# ===== F-06 D1：user_id 参数与向后兼容 =====
+
+def test_legacy_path_still_reused_when_user_id_absent(monkeypatch, product):
+    """**向后兼容锁定**：user_id 缺省（CLI / 迁移脚本 / 旧调用方）时路径与改造前一致。
+
+    产物落在无用户段的 legacy 根下，因此只有不带身份的调用才该命中它。
+    """
+    _patch_mode(monkeypatch, "direct")
+    assert server._reuse_today(CODE, "overview"), "user_id 缺省时旧路径必须仍可复用"
+    # 带身份时不命中无用户段的产物 —— 否则就是跨用户复用（F-06 §13.1 的泄漏）
+    assert server._reuse_today(CODE, "overview", user_id=1) is None
+
+
+def test_reuse_today_signature_accepts_user_id_and_bk(monkeypatch):
+    """签名回归：位置/关键字必须同时支持旧的 (code, type, bk) 与新加的 user_id。"""
+    _patch_mode(monkeypatch, "direct")
+    assert server._reuse_today("999999", "overview", "", None) is None
+    assert server._reuse_today("999999", "overview", bk="", user_id=None) is None

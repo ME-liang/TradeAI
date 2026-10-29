@@ -22,6 +22,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..llm import get_router, load_prompt
 from ..llm.base import LLMRequest
 from ..data.annual_report import is_generic_entity
+from . import chart_assets
 
 logger = logging.getLogger(__name__)
 
@@ -4995,7 +4996,13 @@ def _blockli(value):
 
 
 def render_overview(data: dict, template_dir: str, out_path: str | None = None) -> str:
-    """用 template_overview.html 渲染概况报告；可选落盘。"""
+    """用 template_overview.html 渲染概况报告；可选落盘。
+
+    D4：把 Chart.js 本地副本内联进 `<script>`，使报告可离线打开/打印；
+    读不到本地库则模板自动回退 CDN（`chart_assets` 已把该分支的判断交给模板）。
+    """
+    # 注入内联库与降级标志（原地写回 data，供 meta 侧读取 chart_offline）
+    chart_assets.apply_chart_lib(data, chart_assets.inline_chartjs())
     env = Environment(
         loader=FileSystemLoader(template_dir),
         autoescape=select_autoescape(["html", "xml"]),

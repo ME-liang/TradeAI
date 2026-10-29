@@ -25,8 +25,15 @@
   .pricerow{display:flex;align-items:baseline;gap:14px}
   .price{font-size:40px;font-weight:700;font-family:"Inter"}
   .chg{font-size:18px;font-weight:600;font-family:"Inter"}
-  .watch{background:var(--bg);color:var(--ink);font-size:15px;font-weight:500;border:none;border-radius:20px;height:40px;padding:0 20px;cursor:pointer;transition:background .15s}
+  .watch{background:var(--bg);color:var(--ink);font-size:15px;font-weight:500;border:none;border-radius:20px;height:40px;padding:0 20px;cursor:pointer;transition:background .15s,color .15s}
   .watch:hover{background:#ECECEC}
+  /* 已自选：填充主色以示选中（原实现只有 hover 态，无选中态） */
+  .watch.on{background:var(--blue);color:#fff}
+  .watch.on:hover{background:#0062C4}
+  .watch:disabled{opacity:.6;cursor:default}
+  .watchwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .watchmsg{font-size:12px;color:var(--mut)}
+  .watchmsg.err{color:#D8392F}
   .src{font-size:12px;color:var(--mut);margin-top:8px}
   .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:24px;margin:8px 0 28px}
   .stat .l{font-size:13px;color:var(--mut);margin-bottom:4px}
@@ -53,6 +60,12 @@
   .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
   .aibtn{margin-top:20px;background:var(--blue);color:#fff;font-size:15px;font-weight:500;font-family:inherit;border:none;border-radius:22px;height:44px;padding:0 24px;cursor:pointer;transition:background .15s;display:inline-flex;align-items:center;gap:8px}
   .aibtn:hover{background:var(--blue-h)}
+  /* 「查看历史报告」：报告生成按钮旁的次要入口（F-06），href 由 JS 按当前 code 补齐 */
+  .histlink{
+    display:inline-block;margin:20px 0 0 14px;font-size:14px;font-weight:600;
+    color:var(--blue);text-decoration:none;vertical-align:middle;
+  }
+  .histlink:hover{text-decoration:underline;}
   .cell{background:var(--bg);border-radius:12px;padding:16px}
   .cell .l{font-size:13px;color:var(--mut);margin-bottom:6px}
   .cell .v{font-size:20px;font-weight:700;font-family:"Inter"}
@@ -92,8 +105,10 @@
   }
   .kpanerow{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
   .krange{font-size:13px;color:var(--mut);font-family:"Inter";font-weight:500}
-  .kdemo{font-size:12px;font-weight:600;color:#B25000;background:#FFF3E0;border:1px solid #FFD8A8;border-radius:6px;padding:2px 8px;margin-left:10px;white-space:nowrap}
-  .kdemo[hidden]{display:none}
+  .khint{font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;margin-left:10px;white-space:nowrap;max-width:520px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle}
+  .khint[hidden]{display:none}
+  .khint[data-level="warn"]{color:#B25000;background:#FFF3E0;border:1px solid #FFD8A8}
+  .khint[data-level="bad"]{color:#B3261E;background:#FDECEA;border:1px solid #F5C2BE}
   .kchange{font-size:13px;font-weight:600;font-family:"Inter";margin-left:10px;padding:2px 8px;border-radius:6px;background:#F2F2F7;color:#86868B}
   .kchange[data-up="1"]{background:#FFEBEA;color:#D8392F}
   .kchange[data-up="0"]{background:#E8F5EE;color:#1B9E5A}
@@ -176,7 +191,10 @@
         </div>
         <div class="src" id="src">数据来源：东方财富（实时行情）</div>
       </div>
-      <button class="watch" id="watch">加自选</button>
+      <div class="watchwrap">
+        <button class="watch" id="watch" aria-pressed="false">加自选</button>
+        <span class="watchmsg" id="watchMsg" role="status" aria-live="polite"></span>
+      </div>
     </div>
 
     <div class="stats" id="stats">
@@ -203,7 +221,7 @@
         </div>
       </div>
       <div class="kpanerow">
-        <span><span class="krange" id="kRange">—</span><span class="kchange" id="kChange">—</span><span class="kdemo" id="kDemo" hidden>行情接口不可用，当前为演示数据</span></span>
+        <span><span class="krange" id="kRange">—</span><span class="kchange" id="kChange">—</span><span class="khint" id="kHint" hidden></span></span>
         <div class="kctrl">
           <button type="button" class="rangebtn" id="rangeBtn" aria-pressed="false" title="在图上拖动两条竖线统计区间行情">区间统计</button>
           <div class="karrows">
@@ -254,6 +272,7 @@
         <div class="cell"><div class="l">市净率</div><div class="v" id="ov-pb">—</div></div>
       </div>
       <button class="aibtn" id="aiOverview" type="button">AI生成公司概况报告</button>
+      <a class="histlink" data-rtype="overview" href="reports.html?type=overview">查看历史报告 →</a>
       <div id="ov-report" class="ov-report" style="display:none">
         <div id="ov-progress" class="ov-progress">
           <div class="ov-progress-bar"><span id="ov-progress-fill" class="ov-progress-fill"></span></div>
@@ -274,6 +293,7 @@
         <div class="cell"><div class="l">营收增速</div><div class="v" id="f-rev">—</div></div>
       </div>
       <button class="aibtn" id="aiFundamental" type="button">AI生成公司基本面分析报告</button>
+      <a class="histlink" data-rtype="fundamental" href="reports.html?type=fundamental">查看历史报告 →</a>
       <div id="fund-report" class="ov-report" style="display:none">
         <div id="fund-progress" class="ov-progress">
           <div class="ov-progress-bar"><span id="fund-progress-fill" class="ov-progress-fill"></span></div>
@@ -299,8 +319,9 @@
         <tr><td>ROE</td><td class="hl" id="cmp-roe-c">—</td><td id="cmp-roe-i">—</td><td id="cmp-roe-d">—</td></tr>
         <tr><td>毛利率</td><td class="hl" id="cmp-gross-c">—</td><td id="cmp-gross-i">—</td><td id="cmp-gross-d">—</td></tr>
       </table>
-      <!-- AI生成行业对比报告: 按钮先行落地, 具体生成功能待实现 -->
+      <!-- AI生成行业对比报告：已完整实现（提交 report_type=industry → 轮询 → iframe 展示，见 :1600 起） -->
       <button class="aibtn" id="aiIndustry" type="button">AI生成行业对比报告</button>
+      <a class="histlink" data-rtype="industry" href="reports.html?type=industry">查看历史报告 →</a>
       <div id="ind-report" class="ov-report" style="display:none">
         <div id="ind-progress" class="ov-progress">
           <div class="ov-progress-bar"><span id="ind-progress-fill" class="ov-progress-fill"></span></div>
@@ -341,6 +362,17 @@ const UP='#D8392F',DOWN='#1B9E5A',BLUE='#0071E3';
             + '&name=' + encodeURIComponent(_SP.get('bkname') || '')
             + '&restore=1';
   back.textContent = '← 返回板块';
+})();
+
+// F-06：三个报告面板的「查看历史报告」入口补齐当前 code。
+// 带上 code 让报告库直接聚焦到本只股票；不带则退化为该类型的全部报告（仍可用）。
+// 注意：code 必须先归一化（CODE 已做 /[^0-9]/ 过滤），避免把非法值拼进 URL。
+(function(){
+  if(!CODE) return;
+  document.querySelectorAll('.histlink[data-rtype]').forEach(function(a){
+    a.href = 'reports.html?type=' + encodeURIComponent(a.getAttribute('data-rtype'))
+           + '&code=' + encodeURIComponent(CODE);
+  });
 })();
 
 // 演示兜底（仅当后端与兜底 JSON 都不可达时使用）
@@ -497,32 +529,34 @@ function fallbackDemo(){
   renderStock(rec,true);
 }
 
-// ===== K线（真实数据，失败降级为合成数据） =====
-function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+// ===== K线（只展示真实数据；不可用时明确告知，绝不合成） =====
+// 2026-09-25 起删除合成数据兜底（genData/mulberry32）：旧实现取数失败会静默生成随机行情
+// 冒充真实 K 线，属信任类问题。现在接口一律返回 data_status，前端按 ok/degraded/unavailable
+// 三态分流——不可用就显示"暂不可用"，不再发明一套假数据（与 stock.html 的 FALLBACK 同一原则）。
 // 周期配置: klt=东方财富周期代码, fetchN=请求条数(大于窗口以便平移), win=视图窗口条数, step=每次箭头平移条数(恒为1, 即一个周期单位: 日线一日/周线一周/月线一月)
 // win=可视窗口根数: 三个周期统一为 120, 保证柱子槽位宽度一致(画布宽固定时 柱宽=画布宽/根数)。
 // fetchN 需明显大于 win, 否则取不到更多历史、左右平移箭头会失效。
-const PERIOD={day:{klt:101,fetchN:600,win:120,step:1,seed:7},week:{klt:102,fetchN:400,win:120,step:1,seed:21},month:{klt:103,fetchN:400,win:120,step:1,seed:33}};
+const PERIOD={day:{klt:101,fetchN:600,win:120,step:1},week:{klt:102,fetchN:400,win:120,step:1},month:{klt:103,fetchN:400,win:120,step:1}};
 const WIN_MIN=10; // 放大到最小窗口(根数), 防止蜡烛过密
-function genData(p){
-  const cfg=PERIOD[p]||PERIOD.day;
-  const n=cfg.fetchN;
-  const rnd=mulberry32(cfg.seed);let price= parseFloat((FALLBACK_DETAIL[CODE]||{price:'100'}).price.replace(/[^0-9.]/g,''))||100;
-  const candle=[],vols=[],dates=[];
-  for(let i=0;i<n;i++){
-    const v=4;const o=price;const c=o+(rnd()*2-1)*v;const hi=Math.max(o,c)+rnd()*v*0.6;const lo=Math.min(o,c)-rnd()*v*0.6;price=c;
-    candle.push([+o.toFixed(2),+c.toFixed(2),+lo.toFixed(2),+hi.toFixed(2)]);
-    vols.push(Math.round(rnd()*100+v*4));
+// 不可用态占位对象: 让 renderChart 走空数据分支并显示提示, 不参与任何指标计算。
+function klineUnavailable(msg){
+  return {dates:[],candle:[],vols:[],data_status:'unavailable',error:msg||'K线数据源暂不可用'};
+}
+// 数据质量提示条: ok 不显示; degraded 显示黄条(附首条警告); unavailable 显示红条。
+function setKlineHint(full){
+  const el=document.getElementById('kHint');
+  if(!el) return;
+  const status=(full&&full.data_status)||'ok';
+  let level='', text='';
+  if(status==='unavailable'){
+    level='bad'; text=(full&&full.error)||'K线数据源暂不可用，无法展示真实行情';
+  }else if(status==='degraded'){
+    level='warn';
+    const w=((full.quality||{}).warnings||[]);
+    text=w.length?w[0]:'K线数据质量存疑，请谨慎参考';
   }
-  // 日期必须与真实接口保持一致: 正序(早->晚) + YYYY-MM-DD。
-  // 旧实现用 unshift 倒序且只拼 月-日, 会导致 X 轴时间倒流、resetWindow 取到最早数据、MA/MACD/BOLL 全失真。
-  const base=new Date(); base.setHours(0,0,0,0);
-  for(let i=n-1;i>=0;i--){
-    const d=new Date(base);
-    if(p==='day')d.setDate(base.getDate()-i);else if(p==='week')d.setDate(base.getDate()-i*7);else if(p==='month')d.setMonth(base.getMonth()-i);else d.setFullYear(base.getFullYear()-i);
-    dates.push(fmtDateISO(d));
-  }
-  return {dates,candle,vols,demo:true};
+  el.hidden=!text;
+  if(text){ el.textContent=text; el.setAttribute('data-level',level); el.title=text; }
 }
 
 // 指标默认全部关闭(进入页面不叠加 MA/BOLL/MACD/成交量)
@@ -584,21 +618,26 @@ function tooltipFormatter(ps){
 }
 function fetchKline(){
   const cfg=PERIOD[state.period];
-  if(kcache[state.period]){ resetWindow(); renderChart(); return; }
+  // 命中缓存直接渲染；但不可用态不当作有效缓存，切回该周期时会重新尝试（上游限流多为瞬时的）
+  if(kcache[state.period] && kcache[state.period].data_status!=='unavailable'){ resetWindow(); renderChart(); return; }
   const box=document.getElementById('chart'); if(box) box.classList.add('loading');
   rsSyncBtn();   // 新周期数据未到位前禁用「区间统计」
   fetch(API_KLINE + '?code=' + encodeURIComponent(CODE) + '&klt=' + cfg.klt + '&n=' + cfg.fetchN)
-    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(r=>r.json().catch(()=>null))
     .then(d=>{
-      if(d.error) throw new Error(d.error);
-      d.demo=false; kcache[state.period]=d;
       const b=document.getElementById('chart'); if(b) b.classList.remove('loading');
+      if(!d){ console.warn('K线接口无响应'); kcache[state.period]=klineUnavailable('K线接口无响应'); resetWindow(); renderChart(); return; }
+      if(d.data_status==='unavailable'){ console.warn('K线不可用:', d.error); }
+      d.data_status = d.data_status || 'ok';
+      kcache[state.period]=d;
       resetWindow(); renderChart();
-      if(state.period==='day') setTimeout(prefetchOtherPeriods, 1200); // 首屏优先, 错峰后台预载其余周期
+      if(state.period==='day' && d.data_status!=='unavailable') setTimeout(prefetchOtherPeriods, 1200); // 首屏优先, 错峰后台预载其余周期
     })
     .catch(err=>{
       const b=document.getElementById('chart'); if(b) b.classList.remove('loading');
-      console.warn('K线接口不可用, 使用合成演示数据:', err); kcache[state.period]=genData(state.period); resetWindow(); renderChart();
+      console.warn('K线请求失败:', err);
+      kcache[state.period]=klineUnavailable('K线请求失败，暂无法展示真实行情');
+      resetWindow(); renderChart();
     });
 }
 // 后台预载其余周期: 周/月 K 变化极慢, 预载后点击周期 tab 即时切换(不再等 1s 上游)
@@ -609,16 +648,14 @@ function prefetchOtherPeriods(){
     if(kcache[p]) return;
     const cfg=PERIOD[p];
     fetch(API_KLINE + '?code=' + encodeURIComponent(CODE) + '&klt=' + cfg.klt + '&n=' + cfg.fetchN)
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(d){ if(d && !d.error){ d.demo=false; kcache[p]=d; } })
+      .then(function(r){ return r.json().catch(function(){ return null; }); })
+      .then(function(d){ if(d){ d.data_status=d.data_status||'ok'; kcache[p]=d; } })
       .catch(function(){ /* 预载失败不影响主流程, 切换时按原逻辑重新拉取 */ });
   });
 }
 function resetWindow(){ const cfg=PERIOD[state.period]; const total=(kcache[state.period]||{dates:[]}).dates.length; viewStart=Math.max(0, total-cfg.win); }
 
 function fmtDate(s){ return (s||'').slice(0,10); }
-// 合成数据的日期格式化: 统一 YYYY-MM-DD(补零), 与真实接口返回格式一致
-function fmtDateISO(d){ const z=function(v){return String(v).padStart(2,'0');}; return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate()); }
 
 function renderChart(animate){
   const full=kcache[state.period];
@@ -716,9 +753,8 @@ function renderChart(animate){
 
   const rangeEl=document.getElementById('kRange');
   if(rangeEl) rangeEl.textContent = total ? (fmtDate(dates[0]) + ' ~ ' + fmtDate(dates[dates.length-1])) : '—';
-  // 降级为合成数据时显式提示, 避免用户把演示数据误认为真实行情
-  const demoEl=document.getElementById('kDemo');
-  if(demoEl) demoEl.hidden = !full.demo;
+  // 数据质量三态提示: ok 不显示 / degraded 黄条 / unavailable 红条（不再有"演示数据"分支）
+  setKlineHint(full);
   // 最新一日涨跌幅徽标
   const changeEl=document.getElementById('kChange');
   if(changeEl){
@@ -1104,8 +1140,85 @@ attachPanHold(document.getElementById('panRight'), 1);
 document.getElementById('zoomIn').addEventListener('click',function(){ zoomKline(-1); });
 document.getElementById('zoomOut').addEventListener('click',function(){ zoomKline(1); });
 
-// watch
-document.getElementById('watch').addEventListener('click',e=>{e.target.textContent = (e.target.textContent==='加自选')?'已自选':'加自选';});
+// ===== 自选股（F-03）=====
+// 存储走 8002 的 /api/watchlist（经 8000 同源代理到 auth.db，用户私有、可跨设备）。
+// 删除语义用 POST /remove：8000 静态服务只实现了 do_GET/do_POST（无 do_DELETE），
+// 任何 DELETE 会在 8000 层直接 501、到不了后端。
+const API_WATCH = '/api/watchlist';
+let watchBusy = false;
+
+function watchMsg(text, isErr){
+  const el = document.getElementById('watchMsg');
+  if(!el) return;
+  el.textContent = text || '';
+  el.className = 'watchmsg' + (isErr ? ' err' : '');
+  if(text){ clearTimeout(watchMsg._t); watchMsg._t = setTimeout(function(){ el.textContent=''; }, 4000); }
+}
+
+function watchRedirectLogin(){
+  // 与会话过期时的统一口径一致：带上 next 以便登录后回到当前个股页
+  location.href = '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+}
+
+function watchRender(on){
+  const b = document.getElementById('watch');
+  if(!b) return;
+  b.textContent = on ? '已自选' : '加自选';
+  b.classList.toggle('on', !!on);
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+// 名称快照：进入时名称可能尚未加载，故在点击时刻读取（行情缺失时兜底显示用）
+function watchCurrentName(){
+  const el = document.getElementById('name');
+  const t = el ? (el.textContent || '').trim() : '';
+  return (t && t !== '—') ? t : '';
+}
+
+fetch(API_WATCH + '/check?code=' + encodeURIComponent(CODE))
+  .then(function(r){
+    if(r.status === 401){ watchRedirectLogin(); return null; }
+    return r.ok ? r.json() : null;
+  })
+  .then(function(d){ if(d) watchRender(!!d.watched); })
+  .catch(function(){ /* 状态未知时保持「加自选」，不打扰用户 */ });
+
+document.getElementById('watch').addEventListener('click', function(){
+  if(watchBusy) return;
+  const btn = this;
+  const wasOn = btn.classList.contains('on');
+  const target = !wasOn;
+  watchBusy = true;
+  btn.disabled = true;
+  watchRender(target);                         // 乐观更新
+  const body = target ? {code: CODE, name: watchCurrentName()} : {code: CODE};
+  fetch(API_WATCH + (target ? '/add' : '/remove'), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  })
+    .then(function(r){
+      if(r.status === 401){ watchRedirectLogin(); throw new Error('unauth'); }
+      return r.json().then(function(d){ return {ok: r.ok, d: d}; });
+    })
+    .then(function(res){
+      if(!res.ok){
+        watchRender(wasOn);
+        watchMsg((res.d && res.d.detail) || '操作失败，请稍后重试', true);
+        return;
+      }
+      // 幂等语义：add 返回 added=false（本已存在）/ remove 返回 removed=false（本就不存在）
+      // 均视为成功，最终状态就是这次操作的目标状态。
+      watchRender(target);
+      watchMsg(target ? '已加入自选' : '已移出自选', false);
+    })
+    .catch(function(err){
+      if(err && err.message === 'unauth') return;   // 已在跳转登录页
+      watchRender(wasOn);
+      watchMsg('网络异常，请稍后重试', true);
+    })
+    .finally(function(){ watchBusy = false; btn.disabled = false; });
+});
 
 // ===== AI 生成公司概况报告 =====
 // 流程: 点击 -> POST /api/report(report_type=overview) 立即拿到 task_id -> 轮询状态/进度 -> SUCCESS 后 iframe 内嵌报告
@@ -1692,5 +1805,7 @@ fetchStock();
 fetchKline();
 window.addEventListener('resize',()=>{ if(chart){ chart.resize(); } rsAfterRender(); });
 </script>
+<!-- F-04 报告任务中心：本页三种报告各自页内轮询，切页即失联；全局任务中心把它接住 -->
+<script src="js/task_center.js"></script>
 </body>
 </html>

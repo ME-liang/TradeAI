@@ -317,12 +317,25 @@ button {
   border-radius: 20px;
   padding: 28px;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  /* 卡片是 <a class="feature-card">：继承全局 a{color:inherit;text-decoration:none}，
+     作为 grid 子项会自动 blockify，故链接化无需其它样式改动 */
+  display: block;
 }
 
 .feature-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06);
   border-color: rgba(0, 122, 255, 0.2);
+}
+
+/* 键盘焦点态：卡片原先无任何焦点视觉（WCAG 2.4.7）；
+   与 :hover 的 border-color 对齐 + 一层可见 outline */
+.feature-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  transform: translateY(-4px);
+  border-color: rgba(0, 122, 255, 0.2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06);
 }
 
 .feature-icon {
@@ -492,3 +505,366 @@ button {
     gap: 16px;
   }
 }
+
+/* ===== F-02 首页全局搜索框 =====
+ * 结构: index.html .gsearch；交互与状态见 js/global_search.js
+ * 设计要点: 面板层级需高于 .hero-arc(z-index:1) 与 .navbar(z-index:1000) */
+.gsearch {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: 28px;
+}
+
+.gsearch-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 18px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.gsearch-box:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 8px 26px rgba(0, 122, 255, 0.16);
+}
+
+.gsearch-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+
+.gsearch-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.gsearch-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.gsearch-clear {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gsearch-clear:hover {
+  background: #e6eaef;
+}
+
+/* display:flex 会盖掉 [hidden] 的 UA 样式, 必须显式声明 */
+.gsearch-clear[hidden] {
+  display: none;
+}
+
+/* 移动端「取消」: 仅在浮层打开时显示（见文末媒体查询） */
+.gsearch-cancel {
+  display: none;
+}
+
+/* ===== 下拉面板 ===== */
+.gsearch-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 1100;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.12);
+}
+
+.gsearch-panel[hidden] {
+  display: none;
+}
+
+.gs-group {
+  padding: 4px 0;
+}
+
+.gs-group + .gs-group {
+  border-top: 1px solid var(--border);
+}
+
+.gs-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.gs-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.gs-item.on {
+  background: var(--surface);
+}
+
+.gs-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gs-item-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gs-item-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gs-item-side {
+  flex: 0 0 auto;
+  text-align: right;
+  font-size: 13px;
+}
+
+.gs-val {
+  display: block;
+  color: var(--text);
+}
+
+/* A 股配色约定: 涨红跌绿 */
+.gs-chg {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.gs-chg.up {
+  color: #e5342a;
+}
+
+.gs-chg.down {
+  color: #12a15a;
+}
+
+.gs-chg.flat {
+  color: var(--text-secondary);
+}
+
+.gs-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.gs-badge.industry {
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--primary-dark);
+}
+
+.gs-badge.concept {
+  background: rgba(120, 80, 220, 0.1);
+  color: #6b4fd0;
+}
+
+.gs-more {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gs-more:hover {
+  background: var(--surface);
+}
+
+/* 提示 / 无结果 / 降级 文案块 */
+.gs-note {
+  padding: 14px 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.gs-note strong {
+  color: var(--text);
+}
+
+.gs-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.gs-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.gs-btn:hover {
+  background: var(--surface);
+}
+
+/* 骨架屏（加载态） */
+.gs-skel {
+  height: 34px;
+  margin: 6px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+/* 底部键盘提示条 */
+.gs-hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.gs-source {
+  text-align: right;
+}
+
+/* 屏幕阅读器专用 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 900px) {
+  .gsearch {
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* 移动端: 聚焦后转为吸顶全屏浮层, 避免被软键盘挤压错位 */
+@media (max-width: 640px) {
+  .gsearch {
+    max-width: 100%;
+  }
+
+  .gsearch-box {
+    height: 48px;
+    padding: 0 14px;
+  }
+
+  .gsearch-input {
+    font-size: 16px;   /* ≥16px 防止 iOS 聚焦时自动放大页面 */
+  }
+
+  .gsearch.open .gsearch-box {
+    position: fixed;
+    top: 64px;          /* 导航栏高度, 保留导航可见 */
+    left: 0;
+    right: 0;
+    z-index: 1100;
+    height: 56px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .gsearch.open .gsearch-clear {
+    display: none;      /* 移动端用「取消」替代清空按钮 */
+  }
+
+  .gsearch.open .gsearch-cancel {
+    display: inline-flex;
+    flex: 0 0 auto;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    font-size: 15px;
+    color: var(--primary);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .gsearch-panel {
+    position: fixed;
+    top: 120px;         /* 导航栏 64 + 搜索框 56 */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1100;
+    max-height: none;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding: 8px 12px 24px;
+  }
+}
+

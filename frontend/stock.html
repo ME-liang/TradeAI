@@ -45,6 +45,20 @@
   }
   .search input::placeholder{color:var(--muted);}
   .meta{font-size:14px;color:var(--muted);font-weight:500;margin:18px 0 14px;}
+  /* F-01：?intent= 引导条（中性色，不使用警示配色，避免被误读成错误提示） */
+  .intentbar{
+    display:flex;align-items:flex-start;gap:12px;
+    background:var(--blue-soft,#EAF2FC);border:1px solid #CFE3F8;border-radius:12px;
+    padding:14px 16px;margin:-6px 0 16px;
+  }
+  .intentbar[hidden]{display:none;}
+  .intentbar .ib-text{flex:1;font-size:14px;line-height:1.7;color:#0B4C8C;}
+  .intentbar .ib-text b{font-weight:700;}
+  .intentbar .ib-close{
+    flex:0 0 auto;width:26px;height:26px;border-radius:50%;border:none;background:transparent;
+    color:#0B4C8C;font-size:17px;line-height:1;cursor:pointer;font-family:inherit;opacity:.7;
+  }
+  .intentbar .ib-close:hover{opacity:1;}
   .sortbar{display:flex;align-items:center;gap:10px;margin-top:18px;}
   .sort-label{font-size:14px;color:var(--sub);font-weight:500;}
   .sort-sel{
@@ -76,6 +90,13 @@
   .chg.up{color:var(--up);}
   .chg.down{color:var(--down);}
   .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:15px;}
+  .empty .t{font-size:17px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+  .empty .d{font-size:14px;color:var(--sub);line-height:1.7;}
+  .retry{
+    margin-top:16px;height:38px;padding:0 20px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
+    font-size:14px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;transition:all .15s ease;
+  }
+  .retry:hover{border-color:var(--blue);color:var(--blue);}
   .pager{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:28px;flex-wrap:wrap;}
   .pager button{
     min-width:38px;height:36px;padding:0 12px;border:1px solid #E2E2E7;background:#fff;color:var(--ink);
@@ -147,6 +168,14 @@
 
     <div class="meta" id="meta">共 6 只 · 支持模糊搜索</div>
 
+    <!-- F-01 策略 B：带意图参数的引导条。首页卡片 3/4 描述的能力只能经详情页到达，
+         而首页给不出 code —— 用本提示条说明「为什么带你来这里、下一步做什么」，
+         避免「点了没反应 / 跳错页」被当成 bug。中性引导语，不使用警示色。 -->
+    <div class="intentbar" id="intentBar" hidden>
+      <span class="ib-text" id="intentText"></span>
+      <button type="button" class="ib-close" id="intentClose" aria-label="关闭提示">×</button>
+    </div>
+
     <div class="list" id="list"></div>
     <div class="pager" id="pager"></div>
   </div>
@@ -178,6 +207,14 @@
   const state = { sort:'mcap_desc', order:'desc', page:1, q:'' };  // 排序默认总市值降序
   let mode = 'api';          // 'api' | 'fallback'
   let fallbackAll = null;    // 兜底全量数据(来自 data/stocks.json 或 FALLBACK)
+  let fallbackUpdated = '';  // 快照生成时间(来自 stocks.json 的 updated 字段)
+
+  // 最小转义：用于把用户输入(搜索词)与外部文本(错误原因)插入 innerHTML
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+    ));
+  }
 
   // ===== 列表状态保持 =====
   // 从个股详情返回时恢复页码/每页条数/关键词/排序/滚动位置; 从菜单、搜索等
@@ -195,6 +232,39 @@
     if(q) q.value = state.q;
     ListState.cleanUrl();
   }
+  // ===== URL 直达参数(?q=) =====
+  // 首页全局搜索(F-02)「查看全部」跳转而来。注意: 全新导航**不会**走上面的
+  // ListState.load —— 它只认「返回导航」(back_forward / ?restore=1, 见 list_state.js:isReturnNav),
+  // 故必须单独读取, 否则搜索框空白、列表停在默认第 1 页。
+  // 优先级: 返回导航(restore) > 直达参数(q) > 默认。
+  if(!RESTORE){
+    const _q = new URLSearchParams(location.search).get('q');
+    if(_q && _q.trim()){
+      state.q = _q.trim();
+      if(q) q.value = state.q;
+    }
+  }
+
+  // ===== F-01：?intent= 引导条 =====
+  // 首页卡片 3/4 的能力都只能经个股详情页到达，而首页给不出 code —— 用引导条
+  // 说明「为什么带你来这里」。白名单校验：仅 report / financials 生效，其余静默忽略
+  // （外部链接拼错参数不应弹出无关提示，也不应报错）。
+  const INTENT_TEXT = {
+    report: '请先选择一只股票，进入详情页后点「<b>AI生成公司基本面分析报告</b>」即可生成投研报告，生成过的报告都会收进<b>报告库</b>。',
+    financials: '请先选择一只股票，生成基本面报告后，可在报告内按 <b>年报 / 中报 / 单季度</b> 切换报表视图，并查看 <b>同比 / 环比</b> 指标。'
+  };
+  (function(){
+    const bar = document.getElementById('intentBar');
+    const txt = document.getElementById('intentText');
+    const btn = document.getElementById('intentClose');
+    if(!bar || !txt) return;
+    const key = (new URLSearchParams(location.search).get('intent') || '').trim();
+    const msg = INTENT_TEXT[key];
+    if(!msg) return;                       // 非白名单 → 不显示、不报错
+    txt.innerHTML = msg;                   // 文案是本地常量，不含用户输入
+    bar.hidden = false;
+    if(btn) btn.addEventListener('click', function(){ bar.hidden = true; });
+  })();
   function snapshot(){
     return { sort: state.sort, order: state.order, page: state.page,
              q: state.q, pageSize: PER_PAGE, scrollY: window.scrollY };
@@ -286,23 +356,66 @@
     pager.innerHTML = '';
   }
 
+  // 真正的「查无此标的」：仅在取数成功、且确实过滤不出结果时使用
+  function renderNoMatch(){
+    list.innerHTML = '<div class="empty">未找到匹配「'+ esc(state.q) +'」的标的</div>';
+    meta.textContent = '共 0 只';
+    pager.innerHTML = '';
+  }
+
+  // 非实时数据的来源标注：backup=备用实时源 / stale=内存旧缓存 / snapshot=离线快照。
+  // 「让降级可见」——不要静默把过期数据当实时数据展示。
+  function sourceNote(status, sourceUpdated){
+    if(status === 'backup') return ' · 备用行情源';
+    if(status !== 'stale' && status !== 'snapshot') return '';
+    const label = (status === 'snapshot') ? '离线快照' : '非实时缓存';
+    const t = String(sourceUpdated || '').slice(0, 16);
+    return t ? (' · ' + label + ' · 数据时间 ' + esc(t)) : (' · ' + label);
+  }
+
+  // 行情源不可用：**不是**「未找到」，两者文案必须彻底分开。
+  // 判据来自后端 data_status（见 server.py::get_market_data），前端不猜。
+  function renderUnavailable(reason){
+    list.innerHTML =
+      '<div class="empty">' +
+        '<div class="t">行情数据暂不可用</div>' +
+        '<div class="d">全市场行情源当前无法连接，且本地也没有可用的离线快照，<br>' +
+        '因此暂时取不到列表。<br>' +
+        (reason ? '原因：' + esc(reason) + '<br>' : '') +
+        '这不是「没有这只股票」，通常是数据源临时限流，稍后重试即可。</div>' +
+        '<button class="retry" id="retryBtn">重新加载</button>' +
+      '</div>';
+    meta.textContent = '';
+    pager.innerHTML = '';
+    const b = document.getElementById('retryBtn');
+    if(b) b.addEventListener('click', function(){ load(); });
+  }
+
   // ===== API 模式渲染(后端已排序+分页, 前端直接出图) =====
   function renderApi(data){
+    const status = data.data_status || 'ok';
+
+    // 1) 行情源不可用 —— 绝不能复用「未找到匹配」文案
+    if(status === 'unavailable'){ renderUnavailable(data.reason); return; }
+
     const stocks = data.stocks || [];
     const total = data.total || 0;
     const cur = data.page || 1;
     const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
     list.innerHTML = '';
+
     if(total === 0){
-      list.innerHTML = '<div class="empty">未找到匹配「'+ state.q +'」的标的</div>';
-      meta.textContent = '共 0 只';
-      pager.innerHTML = '';
+      // 2) 无关键词却为空 —— 后端已保证「取数成功必非空」，
+      //    走到这里说明是非实时来源，交给本地快照兜底（见 loadFallbackData）。
+      if(!state.q){ loadFallbackData(); return; }
+      renderNoMatch();
       return;
     }
     const frag = document.createDocumentFragment();
     stocks.forEach(d => frag.appendChild(buildRow(d)));
     list.appendChild(frag);
-    meta.textContent = '共 ' + total + ' 只 · 第 ' + cur + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 支';
+    meta.textContent = '共 ' + total + ' 只 · 第 ' + cur + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 支'
+                     + sourceNote(status, data.source_updated);
     renderPager(totalPages, cur);
     restoreScrollOnce();   // 首屏渲染完成后恢复离开前的滚动位置
   }
@@ -318,7 +431,7 @@
     state.page = pg;
     list.innerHTML = '';
     if(rows.length === 0){
-      list.innerHTML = '<div class="empty">未找到匹配「'+ state.q +'」的标的</div>';
+      list.innerHTML = '<div class="empty">未找到匹配「'+ esc(state.q) +'」的标的</div>';
       meta.textContent = '共 0 只';
       pager.innerHTML = '';
       return;
@@ -327,7 +440,11 @@
     const frag = document.createDocumentFragment();
     rows.slice(start, start + PER_PAGE).forEach(d => frag.appendChild(buildRow(d)));
     list.appendChild(frag);
-    meta.textContent = '共 ' + rows.length + ' 只 · 第 ' + pg + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 支 · 离线兜底';
+    // 明确标注离线来源与快照日期：用户必须能分辨「实时」与「快照」
+    meta.textContent = '共 ' + rows.length + ' 只 · 第 ' + pg + ' / ' + totalPages + ' 页 · 每页 ' + PER_PAGE + ' 支'
+                     + (fallbackUpdated
+                          ? ' · 离线快照 · 数据时间 ' + esc(fallbackUpdated.slice(0, 16))
+                          : ' · 离线兜底');
     renderPager(totalPages, pg);
     restoreScrollOnce();
   }
@@ -338,11 +455,14 @@
       .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(j => {
         fallbackAll = (j && Array.isArray(j.stocks) && j.stocks.length) ? j.stocks : FALLBACK;
+        // 记录快照生成时间，用于向用户标注数据新鲜度（静默用旧数据是不可接受的）
+        fallbackUpdated = (j && j.updated) ? String(j.updated) : '';
         doFallbackRender();
       })
       .catch(err => {
         console.warn('兜底数据也加载失败, 使用内置示例:', err);
         fallbackAll = FALLBACK;
+        fallbackUpdated = '';
         doFallbackRender();
       });
   }
@@ -471,5 +591,7 @@
   // ===== 启动: 优先走 API(方案 A, 真实数据动态返回) =====
   load();
 </script>
+<!-- F-04 报告任务中心：本页可发起报告生成，故需要跑中任务的全局可见性（切页不失联） -->
+<script src="js/task_center.js"></script>
 </body>
 </html>

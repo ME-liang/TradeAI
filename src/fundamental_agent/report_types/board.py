@@ -4,7 +4,8 @@
 - 本文件只服务 report_type="board"，使用 template_board.html。
 - 输入是板块代码（BKxxxx），不含目标个股；完全不触碰 run_pipeline 的个股财报链路。
 - 复用 industry.py 的通用取数工具（curl 封装/单股定量/公司画像），只读不改。
-- 定量数据走真实接口（push2→push2delay 主机降级 + F10 ROEJQ + akshare 兜底）；
+- **东财主机池与取数封装一律用 `data/em.py`**（本文件不再出现域名字面量）；
+  定量数据走真实接口（push2 主机降级 + F10 ROEJQ + akshare 兜底）；
   定性维度由 LLM 生成；LLM 不可用时降级为"未生成"标注，绝不编造。
 - 质量基准：对齐 mlcc-yanjiu 样例报告的框架——核心结论(先读版) → 产业链全景分层 →
   分组公司卡片 → 财务横向对比图表 → 结构化对比结论 → 发展趋势 → 风险提示与免责。
@@ -23,8 +24,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ..data import em as _em
 from ..llm import get_router, load_prompt
 from ..llm.base import LLMRequest
+from . import chart_assets
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +41,11 @@ _PLACEHOLDER_MARKERS = ("示例·", "示例:", "示例：", "待填写", "XX 股
 
 # ---------------------------------------------------------------------------
 # 板块行情与成员取数（与 frontend/server.py 同源的 curl 封装 + 分页拉全范式）
+#
+# **主机域名一律从 data/em.py 取，本文件不再出现字面量**（N-18 事故根因）：
+# 原实现把池写成 ["push2delay", "push2"]，恰好这两台被限流时就无路可走；
+# 三台中唯一可达的 push2test 不在池里 → 板块成员/行情全空 → 报告直接失败。
 # ---------------------------------------------------------------------------
-def _curl_json_hosts(hosts: list[str], path: str, timeout: int = 12):
-    from .industry import _curl_json
-
-    for host in hosts:
-        d = _curl_json(host.rstrip("/") + path, timeout=timeout)
-        if d is not None:
-            return d
-    return None
-
-
 def _num(x):
     try:
         v = float(x)
@@ -80,8 +77,7 @@ def fetch_board_quote(bk: str) -> dict:
         q = dict(base)
         q["pn"] = str(pn)
         q["pz"] = "100"
-        d = _curl_json_hosts(["https://push2delay.eastmoney.com", "https://push2.eastmoney.com"],
-                             "/api/qt/clist/get?" + urllib.parse.urlencode(q), timeout=12)
+        d = _em.get_json("/api/qt/clist/get?" + urllib.parse.urlencode(q), timeout=12)
         diff = ((d or {}).get("data") or {}).get("diff") or []
         if not diff:
             break
@@ -121,11 +117,13 @@ def fetch_members_full(bk: str) -> list[dict]:
             q = dict(base)
             q["pn"] = str(pn)
             q["pz"] = "100"
+            path = "/api/qt/clist/get?" + urllib.parse.urlencode(q)
             d = None
             for _round in range(2):
-                for host in ("https://push2delay.eastmoney.com", "https://push2.eastmoney.com"):
-                    d = _curl_json_hosts([host], "/api/qt/clist/get?" + urllib.parse.urlencode(q),
-                                         timeout=12)
+                # 逐主机验 payload（要确认 diff 完整，不能只看「有 JSON 返回」），
+                # 故不用 get_json，而是自己遍历健康度排序后的主机池。
+                for host in _em.ordered_hosts(_em.PUSH2_HOSTS, path):
+                    d = _em.fetch_host(host, path, timeout=12)
                     if not d:
                         continue
                     data = (d or {}).get("data") or {}
@@ -456,29 +454,21 @@ def _fetch_profile_http(code: str) -> dict:
     akshare 的巨潮接口依赖 py_mini_racer（V8 原生库），实测在后台线程中偶发
     原生层 access violation 直接杀死整个服务进程（无法被 try/except 捕获），
     板块报告并发抓取 12 家画像会显著放大触发概率。F10 兜底为纯 curl，稳定。
+
+    取数走 `em.f10_profile()`。**原实现的请求缺 `sty` 与 `filter`**，服务端回
+    `{"success": false, "message": "返回字段参数不能为空", "code": 9501}`，
+    于是本函数**从落地起就一直返回空 dict**（重点公司的「主营业务」整段为空），
+    且因为它是「有数据就填、没有就跳过」的形状，静默失败无人察觉（N-19）。
     """
-    info: dict = {}
     try:
-        fq = urllib.parse.urlencode({"type": "RPT_F10_BASIC_ORGINFO",
-                                     "secucode": _fund_secucode(code),
-                                     "client": "PC", "source": "HSF10"})
-        fd = _curl_json_hosts(
-            ["https://datacenter.eastmoney.com", "https://datacenter-web.eastmoney.com"],
-            "/securities/api/data/get?" + fq, timeout=8)
-        data = ((fd or {}).get("result") or {}).get("data") or []
-        if data:
-            r = data[0]
-            info = {"main_business": str(r.get("MAIN_BUSINESS") or ""),
-                    "scope": str(r.get("BUSINESS_SCOPE") or "")[:400],
-                    "intro": str(r.get("ORG_INTRODUCTION") or "")[:400],
-                    "industry": str(r.get("INDUSTRY") or "")}
-    except Exception as e:
+        return _em.f10_profile(code)
+    except Exception as e:  # noqa: BLE001
         logger.warning("[board] 东财 F10 画像获取失败(code=%s): %s", code, e)
-    return info
+        return {}
 
 
-def _fund_secucode(code: str) -> str:
-    return code + ("." + ("SH" if code[:1] in ("6", "9") else ("BJ" if code[:1] in ("4", "8") else "SZ")))
+# 注：原先这里还有一份 `_fund_secucode()`（与 industry.py 的同名副本重复），
+# 已统一到 `data/em.py::secucode()` —— F10 的 SECUCODE 规则只应有一处定义。
 
 
 # ---------------------------------------------------------------------------
@@ -517,8 +507,7 @@ def _fetch_quant_http(code: str, snap: dict | None = None) -> dict:
     q = urllib.parse.urlencode({"secid": _secid(code),
                                 "fields": "f186,f188,f184,f115,f162,f23,f116",
                                 "invt": "2", "fltt": "2"})
-    d = _curl_json_hosts(["https://push2.eastmoney.com", "https://push2delay.eastmoney.com"],
-                         "/api/qt/stock/get?" + q, timeout=8)
+    d = _em.get_json("/api/qt/stock/get?" + q, timeout=8)
     row = (d or {}).get("data") or {}
     res["gross"] = _num(row.get("f186"))
     res["debt_ratio"] = _num(row.get("f188"))
@@ -532,14 +521,14 @@ def _fetch_quant_http(code: str, snap: dict | None = None) -> dict:
     if mcap is not None:
         res["mcap"] = mcap
     # 2) ROE 主源: 东财业绩报表 RPT_LICO_FN_CPD.WEIGHTAVG_ROE（加权 ROE，最新报告期）
-    #    （原 F10 ROEJQ 接口 2026-09 实测已返回 0 行失效，保留为备用）
+    #    注：F10 ROEJQ 曾被记为「2026-09 实测已失效」，实为请求缺 sty 参数（N-19），
+    #    现已由 em.f10_roejq 修好并作为备用源并存；两条腿互为备份。
     try:
         q2 = urllib.parse.urlencode({"reportName": "RPT_LICO_FN_CPD", "columns": "ALL",
                                      "filter": '(SECURITY_CODE="%s")' % code,
                                      "pageSize": "1", "pageNumber": "1",
                                      "sortColumns": "REPORTDATE", "sortTypes": "-1"})
-        d2 = _curl_json_hosts(["https://datacenter-web.eastmoney.com", "https://datacenter.eastmoney.com"],
-                              "/api/data/v1/get?" + q2, timeout=8)
+        d2 = _em.get_json("/api/data/v1/get?" + q2, timeout=8, hosts=_em.DATACENTER_HOSTS)
         rows2 = ((d2 or {}).get("result") or {}).get("data") or []
         if rows2:
             res["roe"] = _num(rows2[0].get("WEIGHTAVG_ROE"))
@@ -548,15 +537,9 @@ def _fetch_quant_http(code: str, snap: dict | None = None) -> dict:
     # 3) ROE 备用: F10 主要财务指标 ROEJQ
     if res["roe"] is None:
         try:
-            fq = urllib.parse.urlencode({"type": "RPT_F10_FINANCE_MAINFINADATA",
-                                         "secucode": _fund_secucode(code),
-                                         "client": "PC", "source": "HSF10"})
-            fd = _curl_json_hosts(
-                ["https://datacenter.eastmoney.com", "https://datacenter-web.eastmoney.com"],
-                "/securities/api/data/get?" + fq, timeout=6)
-            fdata = ((fd or {}).get("result") or {}).get("data") or []
-            if fdata:
-                res["roe"] = _num(fdata[0].get("ROEJQ"))
+            v = _em.f10_roejq(code)
+            if v is not None:
+                res["roe"] = v
         except Exception as e:
             logger.warning("[board] F10 ROE 获取失败(code=%s): %s", code, e)
 
@@ -743,7 +726,13 @@ def _blockp(value):
 
 
 def render_board(data: dict, template_dir: str, out_path: str | None = None) -> str:
-    """用 template_board.html 渲染板块深度报告；可选落盘（返回文件路径）。"""
+    """用 template_board.html 渲染板块深度报告；可选落盘（返回文件路径）。
+
+    D4：把 ECharts 本地副本内联进 `<script>`，使报告可离线打开/打印；
+    读不到本地库则模板自动回退 CDN（`chart_assets` 已把该分支的判断交给模板）。
+    """
+    # 注入内联库与降级标志（原地写回 data，供 meta 侧读取 chart_offline）
+    chart_assets.apply_chart_lib(data, chart_assets.inline_echarts())
     env = Environment(
         loader=FileSystemLoader(template_dir),
         autoescape=select_autoescape(["html", "xml"]),
